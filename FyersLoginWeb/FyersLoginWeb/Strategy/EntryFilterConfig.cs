@@ -7,13 +7,12 @@ namespace FyersLoginWeb.Strategy
     /// <summary>
     /// Data-driven entry filters (Aug 2025–Jul 2026 index study) to cut SL rate.
     ///
-    /// Presets:
-    ///  reduce-sl:       skip 10:45 + lag≥15 + skip Tue
-    ///                   → SL% ~42, avgR ~0.32
-    ///  reduce-sl-strict: + lag≥30 + skip Sensex + min risk (bps Q1)
-    ///                   → SL% ~33, avgR ~0.44 (best walk-forward)
-    ///  reduce-sl-ultra:  + risk ≥ median (tighter, fewer trades)
-    ///                   → SL% ~32, avgR ~0.40
+    /// LIVE recommended = reduce-sl-strict (see RecommendedLiveConfig):
+    ///  reduce-sl:        skip 10:45 + lag≥15 + skip Tue
+    ///  reduce-sl-strict: + lag≥30 + skip Sensex + min risk bps (LIVE default)
+    ///  reduce-sl-ultra:  tighter min risk (fewer trades)
+    ///
+    /// Note: Live Legs already drop Sensex + 10:45; strict still belt-and-suspenders.
     /// </summary>
     public class EntryFilterConfig
     {

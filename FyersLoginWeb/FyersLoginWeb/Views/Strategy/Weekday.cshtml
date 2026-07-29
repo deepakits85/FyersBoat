@@ -1,0 +1,42 @@
+@model FyersLoginWeb.Models.StrategyWeekdayViewModel
+@{
+    ViewData["Title"] = "Strategy — Weekday";
+    string MName(int m) => System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
+}
+
+<h2>Weekday × Month — Net R</h2>
+<p class="text-muted"><b>@Model.Symbol</b> | 1:@Model.RR | buffer 0 | robust refs. Har cell = us weekday ka us mahine ka Net R.</p>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+else
+{
+    <table class="table table-bordered text-center align-middle" style="max-width:820px;">
+        <thead class="table-light">
+            <tr>
+                <th>Day</th>
+                @foreach (var m in Model.Months) { <th>@MName(m)</th> }
+                <th>Total</th><th>Trades</th><th class="text-success">Tgt</th><th class="text-danger">SL</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                bool allPos = Model.Months.All(m => r.MonthNet.GetValueOrDefault(m) > 0);
+                <tr>
+                    <td><b>@r.Day</b> @(allPos ? "✅" : "")</td>
+                    @foreach (var m in Model.Months)
+                    {
+                        var v = r.MonthNet.GetValueOrDefault(m);
+                        <td class="@(v > 0 ? "text-success" : v < 0 ? "text-danger" : "")">@v</td>
+                    }
+                    <td class="fw-bold @(r.TotalNet >= 0 ? "text-success" : "text-danger")">@r.TotalNet</td>
+                    <td>@r.Trades</td><td class="text-success">@r.Target</td><td class="text-danger">@r.SL</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="text-muted" style="font-size:0.85rem;">✅ = us din chaaro mahine positive.</p>
+}
