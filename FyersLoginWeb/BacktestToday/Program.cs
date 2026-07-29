@@ -20,8 +20,14 @@ string GetArg(string name, string def)
 }
 
 var day = DateTime.Parse(GetArg("--date", DateTime.Now.ToString("yyyy-MM-dd"))).Date;
+var fromArg = GetArg("--from", "");
+var toArg = GetArg("--to", "");
+DateTime? fromDate = string.IsNullOrEmpty(fromArg) ? null : DateTime.Parse(fromArg).Date;
+DateTime? toDate = string.IsNullOrEmpty(toArg) ? null : DateTime.Parse(toArg).Date;
 var mode = GetArg("--mode", "options").ToLowerInvariant();
 bool trailing = !GetArg("--trailing", "true").Equals("false", StringComparison.OrdinalIgnoreCase);
+int maxSl = int.Parse(GetArg("--maxsl", "2"));
+int gap = int.Parse(GetArg("--gap", "30"));
 var refs = GetArg("--refs", "10:45,11:15,12:45")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
@@ -32,6 +38,13 @@ string appsettingsPath = Path.Combine(root, "FyersLoginWeb", "appsettings.json")
 string tokenPath = Path.Combine(root, "FyersLoginWeb", "bin", "Debug", "net9.0", "token.json");
 if (!File.Exists(tokenPath))
     tokenPath = Path.Combine(root, "token.json");
+// Prefer existing web-app datacache (Release has multi-month index history)
+string[] cacheDirs =
+{
+    Path.Combine(root, "FyersLoginWeb", "bin", "Release", "net9.0", "datacache"),
+    Path.Combine(root, "FyersLoginWeb", "bin", "Debug", "net9.0", "datacache"),
+    Path.Combine(AppContext.BaseDirectory, "datacache"),
+};
 
 var cfg = JsonConvert.DeserializeObject<AppConfig>(File.ReadAllText(appsettingsPath))
     ?? throw new Exception("appsettings.json parse fail");
@@ -94,12 +107,21 @@ else if (string.IsNullOrEmpty(access) || !await ProbeAsync(http, fyers.ClientId,
     }
 }
 
-Console.WriteLine($"=== Backtest {day:yyyy-MM-dd}  mode={mode}  trailing={trailing}  refs={string.Join(",", refs)} ===\n");
-
-if (mode == "index")
-    await RunIndexAsync(http, fyers.ClientId, access, day, refs, trailing);
+if (mode == "index" && (fromDate != null || toDate != null))
+{
+    var start = fromDate ?? day;
+    var end = toDate ?? day;
+    Console.WriteLine($"=== Index range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  gap={gap}m maxSL={maxSl} ===\n");
+    await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs);
+}
 else
-    await RunOptionsAsync(http, fyers.ClientId, access, day, refs, trailing);
+{
+    Console.WriteLine($"=== Backtest {day:yyyy-MM-dd}  mode={mode}  trailing={trailing}  refs={string.Join(",", refs)} ===\n");
+    if (mode == "index")
+        await RunIndexAsync(http, fyers.ClientId, access, day, refs, trailing, cacheDirs);
+    else
+        await RunOptionsAsync(http, fyers.ClientId, access, day, refs, trailing);
+}
 
 static void Fail(string msg)
 {
@@ -198,9 +220,48 @@ static string Sha256Hex(string input)
     return Convert.ToHexString(hash).ToLowerInvariant();
 }
 
-static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId, string access,
-    string symbol, string resolution, DateTime day)
+static string CacheFileName(string symbol, string resolution, DateTime day)
 {
+    string safe = symbol.Replace(":", "_").Replace("/", "_");
+    return $"{safe}_{resolution}_{day:yyyy-MM-dd}.json";
+}
+
+static List<Candle>? TryLoadCache(string[] cacheDirs, string symbol, string resolution, DateTime day)
+{
+    if (day.Date >= DateTime.Now.Date) return null; // today always live
+    string name = CacheFileName(symbol, resolution, day);
+    foreach (var dir in cacheDirs)
+    {
+        string path = Path.Combine(dir, name);
+        if (!File.Exists(path)) continue;
+        try
+        {
+            return JsonConvert.DeserializeObject<List<Candle>>(File.ReadAllText(path)) ?? new List<Candle>();
+        }
+        catch { /* try next */ }
+    }
+    return null;
+}
+
+static void SaveCache(string[] cacheDirs, string symbol, string resolution, DateTime day, List<Candle> candles)
+{
+    if (day.Date >= DateTime.Now.Date || candles.Count == 0) return;
+    string dir = cacheDirs.FirstOrDefault(Directory.Exists)
+                 ?? cacheDirs.Last();
+    Directory.CreateDirectory(dir);
+    File.WriteAllText(Path.Combine(dir, CacheFileName(symbol, resolution, day)),
+        JsonConvert.SerializeObject(candles));
+}
+
+static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId, string access,
+    string symbol, string resolution, DateTime day, string[]? cacheDirs = null)
+{
+    if (cacheDirs != null)
+    {
+        var cached = TryLoadCache(cacheDirs, symbol, resolution, day);
+        if (cached != null) return cached;
+    }
+
     string from = day.ToString("yyyy-MM-dd");
     string url = "https://api-t1.fyers.in/data/history" +
                  $"?symbol={Uri.EscapeDataString(symbol)}&resolution={resolution}&date_format=1" +
@@ -246,13 +307,28 @@ static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId
                 Close = row[4]!.Value<decimal>()
             });
         }
+        if (cacheDirs != null) SaveCache(cacheDirs, symbol, resolution, day, list);
         return list;
     }
     throw new Exception("History rate-limited");
 }
 
+static int PriorityOf(string sym)
+{
+    var u = sym.ToUpperInvariant();
+    if (u.Contains("BANKNIFTY") || u.Contains("NIFTYBANK")) return 2;
+    if (u.Contains("SENSEX")) return 1;
+    if (u.Contains("NIFTY")) return 0;
+    return 9;
+}
+
+static string ShortName(string sym) =>
+    sym.Contains("BANK") ? "BankNifty" :
+    sym.Contains("SENSEX") ? "Sensex" :
+    sym.Contains("NIFTY") ? "Nifty" : sym;
+
 static async Task RunIndexAsync(HttpClient http, string clientId, string access, DateTime day,
-    List<TimeSpan> refs, bool trailing)
+    List<TimeSpan> refs, bool trailing, string[] cacheDirs)
 {
     var legs = new[]
     {
@@ -264,7 +340,7 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
     var all = new List<IndexRow>();
     foreach (var (sym, rr) in legs)
     {
-        var candles = await GetCandlesAsync(http, clientId, access, sym, "3", day);
+        var candles = await GetCandlesAsync(http, clientId, access, sym, "3", day, cacheDirs);
         Console.WriteLine($"{sym}: {candles.Count} x 3m candles");
         if (candles.Count == 0) continue;
 
@@ -285,7 +361,7 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
             foreach (var s in res.BuySignals.Concat(res.SellSignals))
                 all.Add(new IndexRow(sym, s));
         }
-        await Task.Delay(200);
+        await Task.Delay(120);
     }
 
     PrintTrades(all.OrderBy(t => t.Sig.EntryTime).Select(t =>
@@ -294,6 +370,96 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
         $"{t.Sig.Outcome,-12} R={t.Sig.RealizedR,6:F2}  ref {t.Sig.Reference.StartTime:HH:mm}"));
 
     Summarize(all.Select(a => a.Sig));
+}
+
+static async Task RunIndexRangeAsync(HttpClient http, string clientId, string access,
+    DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs)
+{
+    var legs = new[]
+    {
+        ("NSE:NIFTY50-INDEX", 2m, 0),
+        ("BSE:SENSEX-INDEX", 3m, 1),
+        ("NSE:NIFTYBANK-INDEX", 2m, 2),
+    };
+
+    var raw = new List<PfRow>();
+    int daysWithData = 0, apiHits = 0, cacheHits = 0;
+
+    for (var day = from; day <= to; day = day.AddDays(1))
+    {
+        if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+        bool any = false;
+        foreach (var (sym, rr, prio) in legs)
+        {
+            bool hadCache = TryLoadCache(cacheDirs, sym, "3", day) != null;
+            var candles = await GetCandlesAsync(http, clientId, access, sym, "3", day, cacheDirs);
+            if (hadCache) cacheHits++; else if (candles.Count > 0) apiHits++;
+            if (candles.Count == 0) continue;
+            any = true;
+
+            var config = new StrategyConfig
+            {
+                EntryBufferPoints = 0m,
+                StopLossBufferPoints = 0m,
+                RiskRewardRatio = rr,
+                UseTrailing = trailing,
+                UseSquareOff = true,
+                UseReferenceMaxWait = true
+            };
+            config.SetRetracementFromPercentage(50m);
+
+            foreach (var rs in refs)
+            {
+                var res = StrategyBacktester.Run(candles, config, rs);
+                foreach (var s in res.BuySignals.Concat(res.SellSignals))
+                    raw.Add(new PfRow(sym, ShortName(sym), prio, s));
+            }
+            if (!hadCache) await Task.Delay(80);
+        }
+        if (any)
+        {
+            daysWithData++;
+            if (daysWithData % 10 == 0)
+                Console.WriteLine($"  ... processed through {day:yyyy-MM-dd}  rawSignals={raw.Count}  cacheHits={cacheHits} apiHits={apiHits}");
+        }
+    }
+
+    Console.WriteLine($"\nDays with data: {daysWithData}  cacheHits={cacheHits} apiHits={apiHits}  rawSignals={raw.Count}");
+
+    var cands = raw.Select(r => new LiveCand(r.Sig, r.Priority)).ToList();
+    var decisions = PortfolioSelector.Select(cands, maxSlPerDay: maxSl, minGapMinutes: gap);
+    var taken = new List<PfRow>();
+    for (int i = 0; i < raw.Count; i++)
+        if (!decisions[cands[i]].Skipped) taken.Add(raw[i]);
+
+    Console.WriteLine("\n--- MONTHLY TAKEN ---");
+    Console.WriteLine($"{"Month",-10}{"#",5}{"NetR",8}{"Win%",6}{"Tgt",5}{"SL",5}{"Trail",6}{"SqOff",6}");
+    foreach (var g in taken.GroupBy(t => t.Sig.EntryTime.ToString("yyyy-MM")).OrderBy(x => x.Key))
+    {
+        var list = g.ToList();
+        int wins = list.Count(x => x.Sig.RealizedR > 0);
+        int losses = list.Count(x => x.Sig.RealizedR < 0);
+        int wr = (wins + losses) == 0 ? 0 : (int)Math.Round(100.0 * wins / (wins + losses));
+        Console.WriteLine($"{g.Key,-10}{list.Count,5}{list.Sum(x => x.Sig.RealizedR),8:F2}{wr,5}%{list.Count(x => x.Sig.Outcome == TradeOutcome.TargetHit),5}{list.Count(x => x.Sig.Outcome == TradeOutcome.StopLossHit),5}{list.Count(x => x.Sig.Outcome == TradeOutcome.TrailStopHit),6}{list.Count(x => x.Sig.Outcome == TradeOutcome.TimeExit),6}");
+    }
+
+    Console.WriteLine("\n--- BY INDEX (TAKEN) ---");
+    foreach (var g in taken.GroupBy(t => t.Name).OrderBy(x => PriorityOf(x.First().Sym)))
+    {
+        Console.Write($"{g.Key,-12} ");
+        Summarize(g.Select(x => x.Sig));
+    }
+
+    Console.WriteLine("\nRAW summary:");
+    Summarize(raw.Select(r => r.Sig));
+    Console.WriteLine("\nTAKEN summary (portfolio rules applied):");
+    Summarize(taken.Select(t => t.Sig));
+
+    // last 15 taken trades for spot-check
+    Console.WriteLine("\n--- LAST 15 TAKEN TRADES ---");
+    PrintTrades(taken.OrderBy(t => t.Sig.EntryTime).TakeLast(15).Select(t =>
+        $"{t.Sig.EntryTime:yyyy-MM-dd HH:mm}  {t.Name,-10} {(t.Sig.IsLong ? "LONG " : "SHORT")}  " +
+        $"{t.Sig.Outcome,-12} R={t.Sig.RealizedR,6:F2}  ref {t.Sig.Reference.StartTime:HH:mm}"));
 }
 
 static async Task<(string expiryLabel, Dictionary<(long strike, string cepe), string> symbols)>
@@ -467,6 +633,7 @@ sealed class AppConfig
 sealed record Leg(string Code, string Index, string OptRoot, decimal RR, decimal Step, int Priority);
 sealed record IndexRow(string Sym, TradeSignal Sig);
 sealed record OptRow(string Sym, string Cepe, string Dkey, int Priority, TradeSignal Sig);
+sealed record PfRow(string Sym, string Name, int Priority, TradeSignal Sig);
 
 sealed class LiveCand : IPortfolioTrade
 {
