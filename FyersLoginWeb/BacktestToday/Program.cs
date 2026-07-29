@@ -71,6 +71,7 @@ http.DefaultRequestHeaders.UserAgent.ParseAdd("FyersBoat-BacktestToday/1.0");
 
 string access = Environment.GetEnvironmentVariable("FYERS_ACCESS_TOKEN") ?? "";
 string refresh = "";
+bool cacheOnly = argsList.Any(a => a.Equals("--cache-only", StringComparison.OrdinalIgnoreCase));
 TokenModel? saved = null;
 if (File.Exists(tokenPath))
 {
@@ -80,7 +81,12 @@ if (File.Exists(tokenPath))
 }
 
 string authCode = Environment.GetEnvironmentVariable("FYERS_AUTH_CODE") ?? GetArg("--auth-code", "");
-if (!string.IsNullOrEmpty(authCode))
+if (cacheOnly)
+{
+    access = string.IsNullOrEmpty(access) ? "CACHE_ONLY" : access;
+    Console.WriteLine("CACHE-ONLY mode: API skip, sirf local datacache.\n");
+}
+else if (!string.IsNullOrEmpty(authCode))
 {
     Console.WriteLine("Exchanging auth_code for access token...");
     var exchanged = await ExchangeAuthCodeAsync(http, fyers, authCode);
@@ -118,7 +124,8 @@ else if (string.IsNullOrEmpty(access) || !await ProbeAsync(http, fyers.ClientId,
     else
     {
         Fail("Access token expire. Fyers refresh API often disabled (SEBI). " +
-             "FYERS_AUTH_CODE / --auth-code do (login redirect se), ya naya token.json push karo.");
+             "FYERS_AUTH_CODE / --auth-code do (login redirect se), ya naya token.json push karo. " +
+             "Cache se chalana ho to --cache-only use karo.");
     }
 }
 
@@ -279,6 +286,8 @@ static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId
         var cached = TryLoadCache(cacheDirs, symbol, resolution, day);
         if (cached != null) return cached;
     }
+    if (access == "CACHE_ONLY")
+        return new List<Candle>();
 
     string from = day.ToString("yyyy-MM-dd");
     string url = "https://api-t1.fyers.in/data/history" +
