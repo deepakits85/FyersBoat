@@ -2,21 +2,27 @@
 
 Branch: **`cursor/strict-recommended-90e4`**
 
-## RAKHO
+## COMPARE mode (kal live)
+
+`UseCandleEntry=true` + `UseLiveEntry=true` — dono chalenge.
+
+- Pehli jo fire kare → **paper ENTRY**
+- Doosri → **SHADOW** log (timing compare)
+- Log file: `bin/.../logs/live-compare-YYYY-MM-DD.log`  
+  columns: `HH:mm:ss.fff`, mode (`CLOSE_ENTRY` / `TICK_ENTRY` / `*_SHADOW` / `TICK_ARM`), symbol, detail
+
+Events: `TICK_ARM`, `TICK_ENTRY`, `TICK_SHADOW`, `CLOSE_ENTRY`, `CLOSE_SHADOW`, `CLOSE_STALE`
+
+## RAKHO (strategy rules same)
 
 | Setting | Value |
 |---------|--------|
 | Indices | Nifty + BankNifty |
 | Refs | **11:15, 12:45** |
-| Filters | **strict** (lag≥30, skip Tue, min risk bps Nifty≥6 Bank≥7.5) |
+| Filters | **strict** |
 | RR | **1:2** |
-| 90 min ref max-wait | **ON** |
-| Entry | **3m candle CLOSE confirm** |
-| Trailing | ON (2R → SL entry+1, target 2.5R) |
-| Gap / max SL | 30 min / **2 SL/day** |
-| Sensex | **OFF** |
-| 10:45 | **OFF** |
-| Tick live entry (`UseLiveEntry`) | **OFF** (wick/tick pe −21R tha) |
+| 90 min wait | **ON** |
+| Sensex / 10:45 | **OFF** |
 
 ## MAT RAKHO
 

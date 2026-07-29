@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,9 +13,9 @@ using Microsoft.Extensions.Logging;
 namespace FyersLoginWeb.Services
 {
     /// <summary>
-    /// Default = candle CLOSE confirm (RecommendedLiveConfig) — tick/wick path OFF.
-    /// UseLiveEntry=true -> FyersLiveFeed WatchLevel pe real-time LTP cross entry
-    /// (unke FyersLoginWeb repo me ye path −21R aaya tha, isliye default false).
+    /// COMPARE mode (kal live test): CLOSE + TICK dono ON.
+    /// - Dono paths signal dete hain; pehli paper entry leti hai, doosri SHADOW log.
+    /// - Har event HH:mm:ss.fff ke saath console + logs/live-compare-YYYY-MM-DD.log
     /// </summary>
     public class LiveTradingService : BackgroundService
     {
@@ -22,15 +23,21 @@ namespace FyersLoginWeb.Services
         private readonly ILogger<LiveTradingService> _log;
 
         private const bool PaperMode = true;
-        // Tick entry: default OFF (candle-close safer). true = FyersLiveFeed WatchLevel.
-        private const bool UseLiveEntry = false;
+        // Kal compare: DONO ON
+        private const bool UseCandleEntry = true;
+        private const bool UseLiveEntry = true;
 
         private readonly PaperBrokerOrders _broker;
         private readonly PositionManager _mgr;
         private readonly FyersLiveFeed _feed;
         private bool _feedStarted;
-        private readonly HashSet<string> _liveEntered = new();
-        private DateTime _liveEnteredDay = DateTime.MinValue;
+
+        // symbol -> which mode took the real paper entry today
+        private readonly Dictionary<string, string> _enteredByMode = new(StringComparer.OrdinalIgnoreCase);
+        private DateTime _enteredDay = DateTime.MinValue;
+        private readonly object _entryLock = new();
+        private readonly object _logFileLock = new();
+        private string? _compareLogPath;
 
         private const decimal Capital = 100000m;
         private const decimal DeployPct = 0.25m;
@@ -54,10 +61,14 @@ namespace FyersLoginWeb.Services
 
         protected override async Task ExecuteAsync(CancellationToken stop)
         {
+            EnsureCompareLog(DateTime.Now);
+            CompareLog("BOOT", "-",
+                $"Paper={PaperMode} CLOSE={UseCandleEntry} TICK={UseLiveEntry} " +
+                $"refs={string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\\:mm")))} Sensex=OFF");
+
             _log.LogInformation(
-                "LiveTradingService started (Paper={Paper} UseLiveEntry={LiveTick}). refs={Refs} Sensex=OFF default=candle-close",
-                PaperMode, UseLiveEntry,
-                string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\:mm"))));
+                "Live COMPARE mode: CLOSE={Close} TICK={Tick} Paper={Paper}. Log={Log}",
+                UseCandleEntry, UseLiveEntry, PaperMode, _compareLogPath);
 
             while (!stop.IsCancellationRequested)
             {
@@ -76,6 +87,8 @@ namespace FyersLoginWeb.Services
                             _log.LogWarning("Live: valid token nahi (re-login /Auth).");
                         else
                         {
+                            ResetDayIfNeeded(now);
+
                             if (UseLiveEntry && !_feedStarted)
                             {
                                 var opt = scope.ServiceProvider
@@ -84,7 +97,7 @@ namespace FyersLoginWeb.Services
                                 {
                                     _ = _feed.StartAsync(opt.Value.ClientId, token.AccessToken, new List<string>());
                                     _feedStarted = true;
-                                    _log.LogInformation("LIVE-ENTRY tick feed started (HSM LITE).");
+                                    CompareLog("FEED", "-", "HSM LITE tick feed START");
                                 }
                             }
 
@@ -93,7 +106,11 @@ namespace FyersLoginWeb.Services
                         }
                     }
                 }
-                catch (Exception ex) { _log.LogWarning("Live loop error: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    _log.LogWarning("Live loop error: " + ex.Message);
+                    CompareLog("ERROR", "-", ex.Message);
+                }
 
                 await Task.Delay(TimeSpan.FromSeconds(15), stop);
             }
@@ -104,6 +121,20 @@ namespace FyersLoginWeb.Services
             if (now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) return false;
             var t = now.TimeOfDay;
             return t >= new TimeSpan(9, 15, 0) && t <= new TimeSpan(15, 35, 0);
+        }
+
+        private void ResetDayIfNeeded(DateTime now)
+        {
+            lock (_entryLock)
+            {
+                if (_enteredDay != now.Date)
+                {
+                    _enteredByMode.Clear();
+                    _enteredDay = now.Date;
+                    EnsureCompareLog(now);
+                    CompareLog("DAY", "-", $"new session {_enteredDay:yyyy-MM-dd}");
+                }
+            }
         }
 
         private async Task ManageExits(FyersHistoryService hist, string token, DateTime now)
@@ -166,10 +197,14 @@ namespace FyersLoginWeb.Services
                         foreach (var s in res.BuySignals)
                             dayTrades.Add((sym, cepe, rw, dkey, s, leg.Priority));
 
-                        if (UseLiveEntry) TryArmLive(sym, cepe, opt, config, rs, now);
+                        // TICK path: setup ready -> WatchLevel (fires OnCross with sec precision)
+                        if (UseLiveEntry)
+                            TryArmLive(sym, cepe, opt, config, rs, now);
                     }
                 }
             }
+
+            if (!UseCandleEntry) return;
 
             var entryFilter = RecommendedLiveConfig.EntryFilters();
             dayTrades = dayTrades.Where(x => entryFilter.Allows(x.s, x.sym)).ToList();
@@ -193,35 +228,46 @@ namespace FyersLoginWeb.Services
             {
                 var (sym, cepe, rw, s, _) = survivors[i];
                 db.SaveSignal(sym, cepe, rw, s, "live");
-                if (decisions[cands[i]].Skipped) continue;
-                if (UseLiveEntry) continue; // entry tick path se
+                if (decisions[cands[i]].Skipped)
+                {
+                    CompareLog("CLOSE_SKIP", sym,
+                        $"portfolio skip ref={rw} signalCandle={s.EntryTime:HH:mm:ss}");
+                    continue;
+                }
 
                 var confirmAt = s.EntryTime.AddMinutes(RecommendedLiveConfig.CandleMinutes);
                 double ageSinceClose = (now - confirmAt).TotalMinutes;
-                if (ageSinceClose >= -0.25 && ageSinceClose <= RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
+                if (ageSinceClose < -0.25 || ageSinceClose > RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
                 {
-                    int qty = SizeQty(sym, s.EntryPrice);
-                    await _mgr.OnSignal(sym, cepe, qty, s.EntryPrice, s.StopLoss, s.Target, s.EntryTime);
-                    _log.LogInformation(
-                        "LIVE ENTRY (close) {Sym} {Side} @ {Px} sinceClose={Age:F1}m qty={Qty}",
-                        sym, cepe, s.EntryPrice, ageSinceClose, qty);
+                    if (ageSinceClose > RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
+                        CompareLog("CLOSE_STALE", sym,
+                            $"signalCandle={s.EntryTime:HH:mm:ss} closeAt={confirmAt:HH:mm:ss} ageSinceClose={ageSinceClose:F2}m");
+                    continue;
                 }
-                else if (ageSinceClose > RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
-                {
-                    _log.LogInformation(
-                        "LIVE take {Sym} {Entry:HH:mm} STALE (close+{Age:F0}m) — record only",
-                        sym, s.EntryTime, ageSinceClose);
-                }
+
+                await TryTakeEntry(
+                    mode: "CLOSE",
+                    sym: sym,
+                    cepe: cepe,
+                    px: s.EntryPrice,
+                    sl: s.StopLoss,
+                    tgt: s.Target,
+                    entryTimeKey: s.EntryTime,
+                    detail: $"ref={rw} candle={s.EntryTime:HH:mm:ss}-{confirmAt:HH:mm:ss} ageSinceClose={ageSinceClose:F2}m");
             }
         }
 
         private void TryArmLive(string sym, string cepe, List<Candle> opt, StrategyConfig config,
             TimeSpan rs, DateTime now)
         {
-            if (_liveEnteredDay != now.Date) { _liveEntered.Clear(); _liveEnteredDay = now.Date; }
-
-            if (now.TimeOfDay >= config.SquareOffTime || _liveEntered.Contains(sym))
+            if (now.TimeOfDay >= config.SquareOffTime)
             { _feed.ClearWatch(sym); return; }
+
+            lock (_entryLock)
+            {
+                if (_enteredByMode.ContainsKey(sym))
+                { _feed.ClearWatch(sym); return; }
+            }
 
             var lm = StrategyBacktester.RunLongManager(opt, config, rs);
             var st = lm.State;
@@ -237,30 +283,87 @@ namespace FyersLoginWeb.Services
             bool above = st == StrategyState.WaitingForSecondBreakout;
             decimal retr = lm.RetracementLevel;
             decimal rr = config.RiskRewardRatio;
+            string rw = $"{rs:hh\\:mm}";
+
+            // log arm with second precision (once per WatchLevel replace is ok)
+            CompareLog("TICK_ARM", sym,
+                $"ref={rw} state={st} level={level} {(above ? ">=" : "<=")} retr={retr}");
 
             _feed.WatchLevel(sym, level, above, (s, ltp) =>
             {
-                if (_liveEntered.Contains(s)) return;
-                if (!LivePortfolioAllows(DateTime.Now))
+                var fireAt = DateTime.Now;
+                if (!LivePortfolioAllows(fireAt))
                 {
-                    _log.LogInformation("LIVE-ENTRY {Sym} SKIP: portfolio gap/maxSL", s);
+                    CompareLog("TICK_SKIP", s,
+                        $"portfolio block LTP={ltp} level={level} fireAt={fireAt:HH:mm:ss.fff}");
                     return;
                 }
-                _liveEntered.Add(s);
+
                 decimal sl = retr - config.StopLossBufferPoints;
                 decimal risk = ltp - sl;
                 if (risk <= 0)
                 {
-                    _log.LogWarning("LIVE-ENTRY {Sym}: risk<=0 — skip", s);
+                    CompareLog("TICK_SKIP", s, $"risk<=0 LTP={ltp} sl={sl}");
                     return;
                 }
+
                 decimal target = ltp + risk * rr;
-                int qty = SizeQty(s, ltp);
-                _log.LogInformation(
-                    "LIVE-ENTRY realtime {Sym} @ {Ltp} SL {Sl} T {Tgt} (level {Level}, {State})",
-                    s, ltp, sl, target, level, st);
-                _ = _mgr.OnSignal(s, cepe, qty, ltp, sl, target, now);
+                // sync call into async entry
+                _ = TryTakeEntry(
+                    mode: "TICK",
+                    sym: s,
+                    cepe: cepe,
+                    px: ltp,
+                    sl: sl,
+                    tgt: target,
+                    entryTimeKey: fireAt,
+                    detail: $"ref={rw} state={st} level={level} LTP={ltp} fireAt={fireAt:HH:mm:ss.fff} feedLastTick={_feed.LastTickAt:HH:mm:ss.fff} tick#{_feed.TickCount}");
             });
+        }
+
+        /// <summary>
+        /// Pehli mode PAPER entry leti hai; doosri SHADOW log (timing compare ke liye).
+        /// </summary>
+        private async Task TryTakeEntry(string mode, string sym, string cepe,
+            decimal px, decimal sl, decimal tgt, DateTime entryTimeKey, string detail)
+        {
+            var now = DateTime.Now;
+            string? already = null;
+            bool take = false;
+            lock (_entryLock)
+            {
+                ResetDayIfNeeded(now);
+                if (_enteredByMode.TryGetValue(sym, out var who))
+                    already = who;
+                else
+                {
+                    _enteredByMode[sym] = mode;
+                    take = true;
+                }
+            }
+
+            if (!take)
+            {
+                CompareLog($"{mode}_SHADOW", sym,
+                    $"wouldEnter @ {px} SL {sl} T {tgt} | alreadyEnteredBy={already} | {detail}");
+                _log.LogInformation(
+                    "[{Mode}_SHADOW] {Time:HH:mm:ss.fff} {Sym} @ {Px} (already {Who}) {Detail}",
+                    mode, now, sym, px, already, detail);
+                return;
+            }
+
+            if (!LivePortfolioAllows(now) && mode == "CLOSE")
+            {
+                // CLOSE path already filtered by PortfolioSelector; keep soft check for TICK primarily
+            }
+
+            int qty = SizeQty(sym, px);
+            await _mgr.OnSignal(sym, cepe, qty, px, sl, tgt, entryTimeKey);
+            CompareLog($"{mode}_ENTRY", sym,
+                $"EXECUTED @ {px} SL {sl} T {tgt} qty={qty} | {detail}");
+            _log.LogInformation(
+                "[{Mode}_ENTRY] {Time:HH:mm:ss.fff} {Sym} {Side} @ {Px} SL {Sl} T {Tgt} qty={Qty} | {Detail}",
+                mode, now, sym, cepe, px, sl, tgt, qty, detail);
         }
 
         private bool LivePortfolioAllows(DateTime now)
@@ -272,6 +375,38 @@ namespace FyersLoginWeb.Services
                 (now - today.Max(p => p.EntryTime)).TotalMinutes < RecommendedLiveConfig.MinGapMinutes)
                 return false;
             return true;
+        }
+
+        private void EnsureCompareLog(DateTime now)
+        {
+            try
+            {
+                string dir = Path.Combine(AppContext.BaseDirectory, "logs");
+                Directory.CreateDirectory(dir);
+                _compareLogPath = Path.Combine(dir, $"live-compare-{now:yyyy-MM-dd}.log");
+                if (!File.Exists(_compareLogPath))
+                {
+                    File.WriteAllText(_compareLogPath,
+                        "# time\tmode\tsymbol\tdetail\n");
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning("compare log file create fail: " + ex.Message);
+                _compareLogPath = null;
+            }
+        }
+
+        private void CompareLog(string mode, string symbol, string detail)
+        {
+            var line = $"{DateTime.Now:HH:mm:ss.fff}\t{mode}\t{symbol}\t{detail}";
+            _log.LogInformation("[COMPARE] {Line}", line);
+            if (_compareLogPath == null) return;
+            lock (_logFileLock)
+            {
+                try { File.AppendAllText(_compareLogPath, line + Environment.NewLine); }
+                catch { /* ignore IO race */ }
+            }
         }
 
         private static int SizeQty(string sym, decimal premium)
