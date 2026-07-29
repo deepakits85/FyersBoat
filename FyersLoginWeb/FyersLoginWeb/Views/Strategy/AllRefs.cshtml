@@ -1,0 +1,82 @@
+@model FyersLoginWeb.Models.StrategyAllRefsViewModel
+@{
+    ViewData["Title"] = "Strategy — All References";
+}
+
+<h2>All 30-min References — Monthly Summary</h2>
+
+<form method="get" asp-controller="Strategy" asp-action="AllRefs" class="row g-2 mb-3" style="max-width:1000px;">
+    <div class="col-auto">
+        <label class="form-label mb-0">Symbol</label>
+        <input name="symbol" value="@Model.Symbol" class="form-control" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <input name="year" value="@Model.Year" class="form-control" style="width:90px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Month</label>
+        <input name="month" value="@Model.Month" class="form-control" style="width:70px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Retr %</label>
+        <input name="retracement" value="@(Model.RetracementPercent * 100)" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-primary">Run</button>
+    </div>
+</form>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+    @if (Model.Error.Contains("login"))
+    {
+        <a class="btn btn-warning" asp-controller="Auth" asp-action="Index">Go to Login</a>
+    }
+}
+else
+{
+    <div class="alert alert-info" style="max-width:900px;">
+        <b>@Model.Symbol</b> — @Model.Month/@Model.Year &nbsp;|&nbsp; Trading days: <b>@Model.TradingDays</b>
+        &nbsp;|&nbsp; Retr <b>@(Model.RetracementPercent * 100)%</b>
+        <br /><span style="font-size:0.85rem;">Tgt = target, Trl = trail-SL (chhota profit), SL = loss, Op = open. Har reference alag (single-ref mode) chala hai.</span>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="table table-sm table-bordered text-center align-middle" style="min-width:900px;">
+            <thead class="table-light">
+                <tr>
+                    <th rowspan="2" class="align-middle">Reference (30m)</th>
+                    <th colspan="5" class="table-success">BUY (Long)</th>
+                    <th colspan="5" class="table-danger">SELL (Short)</th>
+                </tr>
+                <tr>
+                    <th>Cnt</th><th>Tgt</th><th>Trl</th><th>SL</th><th>Op</th>
+                    <th>Cnt</th><th>Tgt</th><th>Trl</th><th>SL</th><th>Op</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.Rows)
+                {
+                    <tr class="@(r.BuyCount + r.SellCount == 0 ? "text-muted" : "")">
+                        <td><b>@r.Label</b></td>
+                        <td>@r.BuyCount</td><td class="text-success">@r.BuyTgt</td><td class="text-info">@r.BuyTrail</td>
+                        <td class="text-danger">@r.BuySL</td><td>@r.BuyOpen</td>
+                        <td>@r.SellCount</td><td class="text-success">@r.SellTgt</td><td class="text-info">@r.SellTrail</td>
+                        <td class="text-danger">@r.SellSL</td><td>@r.SellOpen</td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-secondary fw-bold">
+                <tr>
+                    <td>TOTAL</td>
+                    <td>@Model.TotBuy</td><td class="text-success">@Model.TotBuyTgt</td><td class="text-info">@Model.TotBuyTrail</td>
+                    <td class="text-danger">@Model.TotBuySL</td><td>@Model.TotBuyOpen</td>
+                    <td>@Model.TotSell</td><td class="text-success">@Model.TotSellTgt</td><td class="text-info">@Model.TotSellTrail</td>
+                    <td class="text-danger">@Model.TotSellSL</td><td>@Model.TotSellOpen</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
