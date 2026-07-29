@@ -1,0 +1,63 @@
+@model FyersLoginWeb.Models.StrategyPortfolioViewModel
+@{
+    ViewData["Title"] = "Strategy — Portfolio";
+}
+
+<h2>Portfolio — Day-wise Filter</h2>
+<p class="text-muted">Nifty: Thu/Fri/Mon @@ 1:2 &nbsp;|&nbsp; SENSEX: Mon/Tue/Wed @@ 1:3 &nbsp;|&nbsp; buffer 0, saare references. Period: <b>@Model.Period</b></p>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+    @if (Model.Error.Contains("login"))
+    {
+        <a class="btn btn-warning" asp-controller="Auth" asp-action="Index">Go to Login</a>
+    }
+}
+else
+{
+    <table class="table table-bordered text-center align-middle" style="max-width:1000px;">
+        <thead class="table-light">
+            <tr>
+                <th>Leg</th><th>Days</th><th>Trades</th>
+                <th class="text-success">Target</th><th class="text-info">Trail</th>
+                <th class="text-danger">SL</th><th class="text-primary">Sq-off</th><th>Open</th><th>Win%</th><th>Net R</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Model.Legs)
+            {
+                <tr>
+                    <td class="text-start"><b>@l.Name</b></td>
+                    <td>@l.Days</td>
+                    <td>@l.Trades</td>
+                    <td class="text-success">@l.Target</td>
+                    <td class="text-info">@l.Trail</td>
+                    <td class="text-danger">@l.SL</td>
+                    <td class="text-primary">@l.TimeExit @(l.TimeExit > 0 ? $"({l.TimeExitR:+0.0;-0.0}R)" : "")</td>
+                    <td>@l.Open</td>
+                    <td>@l.WinRate</td>
+                    <td class="fw-bold @(l.NetR >= 0 ? "text-success" : "text-danger")">@l.NetR</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-secondary fw-bold">
+            <tr>
+                <td class="text-start">TOTAL</td>
+                <td>-</td>
+                <td>@Model.TotalTrades</td>
+                <td class="text-success">@Model.TotalTarget</td>
+                <td class="text-info">@Model.TotalTrail</td>
+                <td class="text-danger">@Model.TotalSL</td>
+                <td class="text-primary">@Model.TotalTimeExit</td>
+                <td>@Model.TotalOpen</td>
+                <td>-</td>
+                <td class="@(Model.TotalNetR >= 0 ? "text-success" : "text-danger")">@Model.TotalNetR</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <p class="text-muted" style="font-size:0.85rem;">
+        Net R = (Target + Trail) × RR − SL + Sq-off ka actual R. <b>Sq-off</b> = 2:45 par force-close (2:45 ke baad koi entry nahi). Trades = saare 30-min references (BUY + SELL).
+    </p>
+}

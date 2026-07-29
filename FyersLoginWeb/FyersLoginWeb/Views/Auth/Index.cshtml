@@ -1,0 +1,68 @@
+@model FyersLoginWeb.Models.TokenModel
+@{
+    ViewData["Title"] = "Fyers Login";
+    var loginUrl = ViewBag.LoginUrl as string;
+}
+
+<h2>Fyers Login</h2>
+
+@if (TempData["Message"] != null)
+{
+    <div class="alert alert-success">@TempData["Message"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+
+<div class="card mb-3" style="max-width:900px;">
+    <div class="card-body">
+        <h5>Step 1 — Fyers par login karo</h5>
+        <p class="text-muted mb-2">
+            Neeche button naye tab me Fyers login kholega. Login ke baad browser is tarah ke
+            URL par pahunchega:<br />
+            <code>https://trade.fyers.in/api-login/redirect-uri/index.html?s=ok&amp;code=200&amp;auth_code=<b>XXXXX</b>&amp;state=sample</code>
+        </p>
+        <a class="btn btn-primary" href="@loginUrl" target="_blank" rel="noopener">
+            Open Fyers Login (new tab)
+        </a>
+    </div>
+</div>
+
+<div class="card mb-3" style="max-width:900px;">
+    <div class="card-body">
+        <h5>Step 2 — auth_code paste karo</h5>
+        <p class="text-muted mb-2">URL me se <code>auth_code=</code> ke baad wali poori value copy karke yahan daalo.</p>
+        <form asp-controller="Auth" asp-action="Manual" method="post">
+            @Html.AntiForgeryToken()
+            <div class="mb-2">
+                <textarea name="authCode" class="form-control" rows="3"
+                          placeholder="auth_code yahan paste karo..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-success">Generate Access Token</button>
+        </form>
+    </div>
+</div>
+
+@if (Model != null)
+{
+    <div class="card" style="max-width:900px;">
+        <div class="card-body">
+            <h5>Current Token</h5>
+            <table class="table table-bordered mb-0">
+                <tr>
+                    <th style="width:160px;">Access Token</th>
+                    <td style="word-break:break-all;">@Model.AccessToken</td>
+                </tr>
+                <tr>
+                    <th>Refresh Token</th>
+                    <td style="word-break:break-all;">@Model.RefreshToken</td>
+                </tr>
+                <tr>
+                    <th>Created At</th>
+                    <td>@Model.CreatedAt</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+}
