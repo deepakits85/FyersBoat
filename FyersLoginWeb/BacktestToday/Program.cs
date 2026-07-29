@@ -51,21 +51,47 @@ if (File.Exists(tokenPath))
     refresh = saved?.RefreshToken ?? "";
 }
 
-if (string.IsNullOrEmpty(access) || !await ProbeAsync(http, fyers.ClientId, access))
+string authCode = Environment.GetEnvironmentVariable("FYERS_AUTH_CODE") ?? GetArg("--auth-code", "");
+if (!string.IsNullOrEmpty(authCode))
+{
+    Console.WriteLine("Exchanging auth_code for access token...");
+    var exchanged = await ExchangeAuthCodeAsync(http, fyers, authCode);
+    access = exchanged.AccessToken;
+    refresh = exchanged.RefreshToken;
+    Directory.CreateDirectory(Path.GetDirectoryName(tokenPath)!);
+    File.WriteAllText(tokenPath, JsonConvert.SerializeObject(exchanged, Formatting.Indented));
+    Console.WriteLine($"Token saved -> {tokenPath}");
+}
+else if (string.IsNullOrEmpty(access) || !await ProbeAsync(http, fyers.ClientId, access))
 {
     string pin = Environment.GetEnvironmentVariable("FYERS_PIN") ?? GetArg("--pin", "");
-    if (string.IsNullOrEmpty(refresh))
-        Fail("Access token invalid/expired aur refresh token nahi mila. Local /Auth login karke token.json push karo.");
-    if (string.IsNullOrEmpty(pin))
-        Fail("Access token expire. Refresh token valid hai — FYERS_PIN=yourpin set karke dubara chalao, ya naya access token do.");
-
-    Console.WriteLine("Refreshing access token via refresh_token...");
-    var refreshed = await RefreshAsync(http, fyers, refresh, pin);
-    access = refreshed.AccessToken;
-    refresh = refreshed.RefreshToken;
-    Directory.CreateDirectory(Path.GetDirectoryName(tokenPath)!);
-    File.WriteAllText(tokenPath, JsonConvert.SerializeObject(refreshed, Formatting.Indented));
-    Console.WriteLine($"Token refreshed + saved -> {tokenPath}");
+    if (!string.IsNullOrEmpty(refresh) && !string.IsNullOrEmpty(pin))
+    {
+        Console.WriteLine("Refreshing access token via refresh_token...");
+        try
+        {
+            var refreshed = await RefreshAsync(http, fyers, refresh, pin);
+            access = refreshed.AccessToken;
+            refresh = refreshed.RefreshToken;
+            Directory.CreateDirectory(Path.GetDirectoryName(tokenPath)!);
+            File.WriteAllText(tokenPath, JsonConvert.SerializeObject(refreshed, Formatting.Indented));
+            Console.WriteLine($"Token refreshed + saved -> {tokenPath}");
+        }
+        catch (Exception ex) when (ex.Message.Contains("disabled", StringComparison.OrdinalIgnoreCase)
+                                   || ex.Message.Contains("SEBI", StringComparison.OrdinalIgnoreCase))
+        {
+            Fail("Fyers refresh API SEBI ki wajah se band hai. Naya login chahiye:\n" +
+                 "1) Fyers login URL kholo, PIN se login karo\n" +
+                 "2) Redirect URL se auth_code copy karo\n" +
+                 "3) FYERS_AUTH_CODE=<code> ya --auth-code <code> dekar dubara chalao\n" +
+                 "Detail: " + ex.Message);
+        }
+    }
+    else
+    {
+        Fail("Access token expire. Fyers refresh API often disabled (SEBI). " +
+             "FYERS_AUTH_CODE / --auth-code do (login redirect se), ya naya token.json push karo.");
+    }
 }
 
 Console.WriteLine($"=== Backtest {day:yyyy-MM-dd}  mode={mode}  trailing={trailing}  refs={string.Join(",", refs)} ===\n");
@@ -139,6 +165,29 @@ static async Task<TokenModel> RefreshAsync(HttpClient http, FyersSettings fyers,
     {
         AccessToken = json["access_token"]?.ToString() ?? "",
         RefreshToken = json["refresh_token"]?.ToString() ?? refreshToken,
+        CreatedAt = DateTime.Now
+    };
+}
+
+static async Task<TokenModel> ExchangeAuthCodeAsync(HttpClient http, FyersSettings fyers, string authCode)
+{
+    string hash = Sha256Hex($"{fyers.ClientId}:{fyers.SecretKey}");
+    var payload = new JObject
+    {
+        ["grant_type"] = "authorization_code",
+        ["appIdHash"] = hash,
+        ["code"] = authCode.Trim()
+    };
+    using var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+    using var resp = await http.PostAsync("https://api-t1.fyers.in/api/v3/validate-authcode", content);
+    string body = await resp.Content.ReadAsStringAsync();
+    var json = JObject.Parse(body);
+    if (json["s"]?.ToString() != "ok")
+        throw new Exception("Auth-code exchange failed: " + body);
+    return new TokenModel
+    {
+        AccessToken = json["access_token"]?.ToString() ?? "",
+        RefreshToken = json["refresh_token"]?.ToString() ?? "",
         CreatedAt = DateTime.Now
     };
 }
