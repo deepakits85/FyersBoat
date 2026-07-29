@@ -31,6 +31,8 @@ int gap = int.Parse(GetArg("--gap", "30"));
 string dumpPath = GetArg("--dump", "");
 string filterPreset = GetArg("--filters", "none").ToLowerInvariant(); // none | reduce-sl
 bool refWait = !GetArg("--ref-wait", "true").Equals("false", StringComparison.OrdinalIgnoreCase); // 90-min max wait after ref end
+string rrArg = GetArg("--rr", ""); // optional override e.g. 1 or 2 (all legs same RR)
+decimal? rrOverride = string.IsNullOrEmpty(rrArg) ? null : decimal.Parse(rrArg, CultureInfo.InvariantCulture);
 var refs = GetArg("--refs", "10:45,11:15,12:45")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
@@ -122,11 +124,11 @@ if ((mode == "index" || mode == "options") && (fromDate != null || toDate != nul
 {
     var start = fromDate ?? day;
     var end = toDate ?? day;
-    Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  refWait={(refWait ? "90m" : "OFF")}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
+    Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  refWait={(refWait ? "90m" : "OFF")}  rr={(rrOverride?.ToString() ?? "default")}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
     if (mode == "index")
-        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait);
+        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride);
     else
-        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait);
+        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride);
 }
 else
 {
@@ -388,7 +390,7 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
 
 static async Task RunIndexRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
-    string dumpPath = "", EntryFilterConfig? entryFilters = null, bool refWait = true)
+    string dumpPath = "", EntryFilterConfig? entryFilters = null, bool refWait = true, decimal? rrOverride = null)
 {
     entryFilters ??= new EntryFilterConfig();
     var legs = new[]
@@ -413,15 +415,22 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
             if (candles.Count == 0) continue;
             any = true;
 
+            decimal useRr = rrOverride ?? rr;
             var config = new StrategyConfig
             {
                 EntryBufferPoints = 0m,
                 StopLossBufferPoints = 0m,
-                RiskRewardRatio = rr,
+                RiskRewardRatio = useRr,
                 UseTrailing = trailing,
                 UseSquareOff = true,
                 UseReferenceMaxWait = refWait
             };
+            // 1:1 pe trail@2R kabhi pehle fire nahi — target pehle hit hota hai
+            if (rrOverride != null && useRr < 2m)
+            {
+                config.TrailActivateRR = 2m;
+                config.TrailTargetRR = 2.5m;
+            }
             config.SetRetracementFromPercentage(50m);
 
             foreach (var rs in refs)
@@ -563,7 +572,7 @@ static string? ResolveOptionSymbol(Dictionary<(long strike, string cepe), string
 
 static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
-    string dumpPath, EntryFilterConfig entryFilters, bool refWait = true)
+    string dumpPath, EntryFilterConfig entryFilters, bool refWait = true, decimal? rrOverride = null)
 {
     // Cache-first ATM CE/PE backtest (same as live bot symbol style YYMMM for monthly weeklies in July cache).
     var legs = new[]
@@ -588,14 +597,17 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             var idx = await GetCandlesAsync(http, clientId, access, leg.Index, "3", day, cacheDirs);
             if (idx.Count == 0) continue;
 
+            decimal useRr = rrOverride ?? leg.RR;
             var config = new StrategyConfig
             {
                 EntryBufferPoints = 0m,
                 StopLossBufferPoints = 0m,
-                RiskRewardRatio = leg.RR,
+                RiskRewardRatio = useRr,
                 UseTrailing = trailing,
                 UseSquareOff = true,
-                UseReferenceMaxWait = refWait
+                UseReferenceMaxWait = refWait,
+                TrailActivateRR = Math.Max(useRr, 1m),
+                TrailTargetRR = useRr + 0.5m
             };
             config.SetRetracementFromPercentage(50m);
 
