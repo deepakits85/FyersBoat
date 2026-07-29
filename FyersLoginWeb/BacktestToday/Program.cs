@@ -33,6 +33,8 @@ string filterPreset = GetArg("--filters", "none").ToLowerInvariant(); // none | 
 bool refWait = !GetArg("--ref-wait", "true").Equals("false", StringComparison.OrdinalIgnoreCase); // 90-min max wait after ref end
 string rrArg = GetArg("--rr", ""); // optional override e.g. 1 or 2 (all legs same RR)
 decimal? rrOverride = string.IsNullOrEmpty(rrArg) ? null : decimal.Parse(rrArg, CultureInfo.InvariantCulture);
+string rrSensexArg = GetArg("--rr-sensex", ""); // Sensex-only RR override (e.g. 4)
+decimal? rrSensex = string.IsNullOrEmpty(rrSensexArg) ? null : decimal.Parse(rrSensexArg, CultureInfo.InvariantCulture);
 var refs = GetArg("--refs", "10:45,11:15,12:45")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
@@ -124,11 +126,11 @@ if ((mode == "index" || mode == "options") && (fromDate != null || toDate != nul
 {
     var start = fromDate ?? day;
     var end = toDate ?? day;
-    Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  refWait={(refWait ? "90m" : "OFF")}  rr={(rrOverride?.ToString() ?? "default")}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
+    Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  refWait={(refWait ? "90m" : "OFF")}  rr={(rrOverride?.ToString() ?? "default")} rrSensex={(rrSensex?.ToString() ?? "-")}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
     if (mode == "index")
-        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride);
+        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex);
     else
-        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride);
+        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex);
 }
 else
 {
@@ -390,7 +392,8 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
 
 static async Task RunIndexRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
-    string dumpPath = "", EntryFilterConfig? entryFilters = null, bool refWait = true, decimal? rrOverride = null)
+    string dumpPath = "", EntryFilterConfig? entryFilters = null, bool refWait = true, decimal? rrOverride = null,
+    decimal? rrSensex = null)
 {
     entryFilters ??= new EntryFilterConfig();
     var legs = new[]
@@ -416,6 +419,8 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
             any = true;
 
             decimal useRr = rrOverride ?? rr;
+            if (rrSensex != null && sym.Contains("SENSEX", StringComparison.OrdinalIgnoreCase))
+                useRr = rrSensex.Value;
             var config = new StrategyConfig
             {
                 EntryBufferPoints = 0m,
@@ -426,7 +431,7 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
                 UseReferenceMaxWait = refWait
             };
             // 1:1 pe trail@2R kabhi pehle fire nahi — target pehle hit hota hai
-            if (rrOverride != null && useRr < 2m)
+            if ((rrOverride != null || rrSensex != null) && useRr < 2m)
             {
                 config.TrailActivateRR = 2m;
                 config.TrailTargetRR = 2.5m;
@@ -572,7 +577,8 @@ static string? ResolveOptionSymbol(Dictionary<(long strike, string cepe), string
 
 static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
-    string dumpPath, EntryFilterConfig entryFilters, bool refWait = true, decimal? rrOverride = null)
+    string dumpPath, EntryFilterConfig entryFilters, bool refWait = true, decimal? rrOverride = null,
+    decimal? rrSensex = null)
 {
     // Cache-first ATM CE/PE backtest (same as live bot symbol style YYMMM for monthly weeklies in July cache).
     var legs = new[]
@@ -598,6 +604,8 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             if (idx.Count == 0) continue;
 
             decimal useRr = rrOverride ?? leg.RR;
+            if (rrSensex != null && leg.Code == "sensex")
+                useRr = rrSensex.Value;
             var config = new StrategyConfig
             {
                 EntryBufferPoints = 0m,
@@ -605,10 +613,13 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
                 RiskRewardRatio = useRr,
                 UseTrailing = trailing,
                 UseSquareOff = true,
-                UseReferenceMaxWait = refWait,
-                TrailActivateRR = Math.Max(useRr, 1m),
-                TrailTargetRR = useRr + 0.5m
+                UseReferenceMaxWait = refWait
             };
+            if ((rrOverride != null || (rrSensex != null && leg.Code == "sensex")) && useRr < 2m)
+            {
+                config.TrailActivateRR = 2m;
+                config.TrailTargetRR = 2.5m;
+            }
             config.SetRetracementFromPercentage(50m);
 
             foreach (var rs in refs)
