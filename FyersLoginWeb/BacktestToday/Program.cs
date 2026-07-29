@@ -28,10 +28,18 @@ var mode = GetArg("--mode", "options").ToLowerInvariant();
 bool trailing = !GetArg("--trailing", "true").Equals("false", StringComparison.OrdinalIgnoreCase);
 int maxSl = int.Parse(GetArg("--maxsl", "2"));
 int gap = int.Parse(GetArg("--gap", "30"));
+string dumpPath = GetArg("--dump", "");
+string filterPreset = GetArg("--filters", "none").ToLowerInvariant(); // none | reduce-sl
 var refs = GetArg("--refs", "10:45,11:15,12:45")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
     .ToList();
+
+EntryFilterConfig entryFilters = filterPreset switch
+{
+    "reduce-sl" or "reducesl" or "sl" => EntryFilterConfig.ReduceStopLossPreset(),
+    _ => new EntryFilterConfig()
+};
 
 string root = FindAppRoot();
 string appsettingsPath = Path.Combine(root, "FyersLoginWeb", "appsettings.json");
@@ -111,8 +119,8 @@ if (mode == "index" && (fromDate != null || toDate != null))
 {
     var start = fromDate ?? day;
     var end = toDate ?? day;
-    Console.WriteLine($"=== Index range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  gap={gap}m maxSL={maxSl} ===\n");
-    await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs);
+    Console.WriteLine($"=== Index range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
+    await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters);
 }
 else
 {
@@ -373,8 +381,10 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
 }
 
 static async Task RunIndexRangeAsync(HttpClient http, string clientId, string access,
-    DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs)
+    DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
+    string dumpPath = "", EntryFilterConfig? entryFilters = null)
 {
+    entryFilters ??= new EntryFilterConfig();
     var legs = new[]
     {
         ("NSE:NIFTY50-INDEX", 2m, 0),
@@ -426,6 +436,10 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
 
     Console.WriteLine($"\nDays with data: {daysWithData}  cacheHits={cacheHits} apiHits={apiHits}  rawSignals={raw.Count}");
 
+    int beforeFilter = raw.Count;
+    raw = raw.Where(r => entryFilters.Allows(r.Sig)).ToList();
+    Console.WriteLine($"Entry filters [{entryFilters}]: {beforeFilter} -> {raw.Count} signals kept");
+
     var cands = raw.Select(r => new LiveCand(r.Sig, r.Priority)).ToList();
     var decisions = PortfolioSelector.Select(cands, maxSlPerDay: maxSl, minGapMinutes: gap);
     var taken = new List<PfRow>();
@@ -460,6 +474,43 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
     PrintTrades(taken.OrderBy(t => t.Sig.EntryTime).TakeLast(15).Select(t =>
         $"{t.Sig.EntryTime:yyyy-MM-dd HH:mm}  {t.Name,-10} {(t.Sig.IsLong ? "LONG " : "SHORT")}  " +
         $"{t.Sig.Outcome,-12} R={t.Sig.RealizedR,6:F2}  ref {t.Sig.Reference.StartTime:HH:mm}"));
+
+    if (!string.IsNullOrEmpty(dumpPath))
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dumpPath))!);
+        using var sw = new StreamWriter(dumpPath);
+        sw.WriteLine("taken,sym,name,side,ref,entry,exit,weekday,month,refRange,risk,riskBps,minsAfterRef,minsHold,retrFirst,outcome,R,prio");
+        for (int i = 0; i < raw.Count; i++)
+        {
+            var t = raw[i];
+            var s = t.Sig;
+            bool isTaken = !decisions[cands[i]].Skipped;
+            bool retrFirst = s.FirstBreachTime == default;
+            double minsAfterRef = (s.EntryTime - s.Reference.EndTime).TotalMinutes;
+            double hold = s.OutcomeTime.HasValue ? (s.OutcomeTime.Value - s.EntryTime).TotalMinutes : -1;
+            decimal riskBps = s.EntryPrice == 0 ? 0 : (s.Risk / s.EntryPrice) * 10000m;
+            sw.WriteLine(string.Join(',',
+                isTaken ? 1 : 0,
+                t.Sym,
+                t.Name,
+                s.IsLong ? "LONG" : "SHORT",
+                s.Reference.StartTime.ToString("HH:mm"),
+                s.EntryTime.ToString("yyyy-MM-dd HH:mm"),
+                s.OutcomeTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
+                s.EntryTime.DayOfWeek,
+                s.EntryTime.ToString("yyyy-MM"),
+                s.Reference.Range.ToString("F2"),
+                s.Risk.ToString("F2"),
+                riskBps.ToString("F2"),
+                minsAfterRef.ToString("F0"),
+                hold.ToString("F0"),
+                retrFirst ? 1 : 0,
+                s.Outcome,
+                s.RealizedR.ToString("F3"),
+                t.Priority));
+        }
+        Console.WriteLine($"\nDump written: {dumpPath} ({raw.Count} rows)");
+    }
 }
 
 static async Task<(string expiryLabel, Dictionary<(long strike, string cepe), string> symbols)>
