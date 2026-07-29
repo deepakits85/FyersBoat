@@ -2,12 +2,15 @@
 
 Branch: **`cursor/strict-recommended-90e4`**
 
+> **Retest (29 Jul night):** confirm/entry ab sirf **refHigh** (prior-high bug fix).
+> Full numbers: artifact `RETEST-AFTER-REFHIGH-FIX.md`.
+
 ## COMPARE mode (kal live)
 
 `UseCandleEntry=true` + `UseLiveEntry=true`
 
 **Rules (dono modes):**
-1. Breakout: 3m **Close > reference high** (confirm)
+1. Breakout: 3m **Close > reference high** (confirm) — prior-high mix nahi
 2. Confirm candle pe entry **nahi** (confirm close ke baad hi pata chalta hai)
 3. **Uske baad** next candle/ticks pe price jab **ref high (entry)** pe aaye → entry
 
@@ -26,7 +29,7 @@ Branch: **`cursor/strict-recommended-90e4`**
 | RR | **1:2** |
 | 90 min wait | **ON** |
 | Sensex / 10:45 | **OFF** |
-| Breakout | **CLOSE confirm** |
+| Breakout | **CLOSE confirm vs refHigh** |
 | Entry | **Reference HIGH** |
 
 ## MAT RAKHO
@@ -38,6 +41,7 @@ Branch: **`cursor/strict-recommended-90e4`**
 - `Strategy/RecommendedLiveConfig.cs` — single source of truth
 - `Services/LiveTradingService.cs` — live paper bot (strict wired)
 - `Strategy/EntryFilterConfig.cs` → `ReduceStopLossStrictPreset()`
+- `Strategy/BreakoutRetracementStrategy.cs` → `ConfirmLevel` = ref High/Low
 - `Services/FyersLiveFeed.cs` — tick feed available, `UseLiveEntry=false`
 
 ## CLI backtest
