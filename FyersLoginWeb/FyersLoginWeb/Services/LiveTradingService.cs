@@ -13,9 +13,10 @@ using Microsoft.Extensions.Logging;
 namespace FyersLoginWeb.Services
 {
     /// <summary>
-    /// COMPARE mode (kal live test): CLOSE + TICK dono ON.
-    /// - Dono paths signal dete hain; pehli paper entry leti hai, doosri SHADOW log.
-    /// - Har event HH:mm:ss.fff ke saath console + logs/live-compare-YYYY-MM-DD.log
+    /// COMPARE mode: CLOSE + TICK dono ON, lekin RULE same —
+    /// 1) Breakout sirf 3m CLOSE confirm
+    /// 2) Entry price = reference candle HIGH (cap), LTP pe chase nahi
+    /// TICK sirf fill-timing: close confirm / WaitingForEntry ke baad LTP jab ref-high touch kare.
     /// </summary>
     public class LiveTradingService : BackgroundService
     {
@@ -23,7 +24,7 @@ namespace FyersLoginWeb.Services
         private readonly ILogger<LiveTradingService> _log;
 
         private const bool PaperMode = true;
-        // Kal compare: DONO ON
+        // Kal compare: DONO ON (rules same — close breakout + entry @ ref high)
         private const bool UseCandleEntry = true;
         private const bool UseLiveEntry = true;
 
@@ -245,18 +246,98 @@ namespace FyersLoginWeb.Services
                     continue;
                 }
 
-                await TryTakeEntry(
-                    mode: "CLOSE",
-                    sym: sym,
-                    cepe: cepe,
-                    px: s.EntryPrice,
-                    sl: s.StopLoss,
-                    tgt: s.Target,
-                    entryTimeKey: s.EntryTime,
-                    detail: $"ref={rw} candle={s.EntryTime:HH:mm:ss}-{confirmAt:HH:mm:ss} ageSinceClose={ageSinceClose:F2}m");
+                // Entry ALWAYS at reference candle high (long). Recalc target from that entry.
+                decimal refHigh = s.Reference.High;
+                decimal entryPx = refHigh;
+                decimal sl = s.StopLoss;
+                decimal risk = entryPx - sl;
+                if (risk <= 0)
+                {
+                    CompareLog("CLOSE_SKIP", sym, $"risk<=0 entry(refHigh)={entryPx} sl={sl}");
+                    continue;
+                }
+                decimal tgt = entryPx + risk * s.RiskRewardRatio;
+
+                // TICK fill-timing: LTP jab ref-high pe aaye (pullback), entry @ refHigh — wick breakout nahi
+                if (UseLiveEntry)
+                    ArmTickFillAtRefHigh(sym, cepe, refHigh, sl, tgt, rw, s.EntryTime, confirmAt);
+
+                if (UseCandleEntry)
+                {
+                    await TryTakeEntry(
+                        mode: "CLOSE",
+                        sym: sym,
+                        cepe: cepe,
+                        px: entryPx,
+                        sl: sl,
+                        tgt: tgt,
+                        entryTimeKey: s.EntryTime,
+                        detail: $"BREAKOUT_CLOSE_OK entry=REF_HIGH={refHigh} (not LTP) ref={rw} " +
+                                $"candle={s.EntryTime:HH:mm:ss}-{confirmAt:HH:mm:ss} ageSinceClose={ageSinceClose:F2}m " +
+                                $"sigEntryWas={s.EntryPrice}");
+                }
             }
         }
 
+        /// <summary>
+        /// TICK = sirf fill clock. Breakout pehle CLOSE se confirm. Entry @ ref high jab LTP &lt;= refHigh.
+        /// WaitingForSecondBreakout pe wick arm NAHI.
+        /// </summary>
+        private void ArmTickFillAtRefHigh(string sym, string cepe, decimal refHigh, decimal sl, decimal tgt,
+            string rw, DateTime signalCandle, DateTime confirmAt)
+        {
+            lock (_entryLock)
+            {
+                if (_enteredByMode.ContainsKey(sym)) return;
+            }
+
+            // Pullback to ref high: fire when LTP <= refHigh (above=false)
+            CompareLog("TICK_ARM", sym,
+                $"fill@REF_HIGH={refHigh} when LTP<=level (no wick breakout) ref={rw} " +
+                $"closeConfirm={confirmAt:HH:mm:ss} candle={signalCandle:HH:mm:ss}");
+
+            _feed.WatchLevel(sym, refHigh, above: false, (s, ltp) =>
+            {
+                var fireAt = DateTime.Now;
+                if (!LivePortfolioAllows(fireAt))
+                {
+                    CompareLog("TICK_SKIP", s,
+                        $"portfolio block LTP={ltp} refHigh={refHigh} fireAt={fireAt:HH:mm:ss.fff}");
+                    return;
+                }
+
+                _ = TryTakeEntry(
+                    mode: "TICK",
+                    sym: s,
+                    cepe: cepe,
+                    px: refHigh,   // entry = reference high, not LTP chase
+                    sl: sl,
+                    tgt: tgt,
+                    entryTimeKey: fireAt,
+                    detail: $"FILL@REF_HIGH={refHigh} LTP={ltp} (breakout was CLOSE) ref={rw} " +
+                            $"fireAt={fireAt:HH:mm:ss.fff} feedLastTick={_feed.LastTickAt:HH:mm:ss.fff} tick#{_feed.TickCount}");
+            });
+
+            // Pehle se LTP <= refHigh ho to turant fill (next tick ka wait mat karo)
+            var cur = _feed.Ltp(sym);
+            if (cur != null && cur.Value > 0 && cur.Value <= refHigh)
+            {
+                var fireAt = DateTime.Now;
+                CompareLog("TICK_IMMEDIATE", sym,
+                    $"LTP={cur} already <= REF_HIGH={refHigh} -> fill now {fireAt:HH:mm:ss.fff}");
+                _feed.ClearWatch(sym);
+                if (LivePortfolioAllows(fireAt))
+                {
+                    _ = TryTakeEntry("TICK", sym, cepe, refHigh, sl, tgt, fireAt,
+                        $"FILL@REF_HIGH={refHigh} LTP={cur} IMMEDIATE (breakout CLOSE) ref={rw}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gap case: close-confirm ho chuka, WaitingForEntry — LTP ref-high touch pe entry @ ref high.
+        /// Wick 2nd-breakout arm NAHI.
+        /// </summary>
         private void TryArmLive(string sym, string cepe, List<Candle> opt, StrategyConfig config,
             TimeSpan rs, DateTime now)
         {
@@ -270,55 +351,30 @@ namespace FyersLoginWeb.Services
             }
 
             var lm = StrategyBacktester.RunLongManager(opt, config, rs);
-            var st = lm.State;
-            bool arm = st == StrategyState.WaitingForSecondBreakout || st == StrategyState.WaitingForEntry;
-            if (!arm) { _feed.ClearWatch(sym); return; }
+            // Sirf pullback-to-ref-high state — WaitingForSecondBreakout = wick, skip
+            if (lm.State != StrategyState.WaitingForEntry)
+            {
+                if (lm.State == StrategyState.WaitingForSecondBreakout)
+                    CompareLog("TICK_WAIT_CLOSE", sym,
+                        $"state={lm.State} — breakout CLOSE ka wait (wick pe entry nahi)");
+                return;
+            }
 
             var refc = lm.CurrentReference;
             if (refc != null && config.UseReferenceMaxWait &&
                 now > refc.EndTime.AddMinutes(config.MaxReferenceWaitMinutes))
             { _feed.ClearWatch(sym); return; }
 
-            decimal level = lm.EntryCapLevel;
-            bool above = st == StrategyState.WaitingForSecondBreakout;
+            decimal refHigh = lm.EntryCapLevel; // buffers=0 => reference high
             decimal retr = lm.RetracementLevel;
             decimal rr = config.RiskRewardRatio;
+            decimal sl = retr - config.StopLossBufferPoints;
+            decimal risk = refHigh - sl;
+            if (risk <= 0) return;
+            decimal tgt = refHigh + risk * rr;
             string rw = $"{rs:hh\\:mm}";
 
-            // log arm with second precision (once per WatchLevel replace is ok)
-            CompareLog("TICK_ARM", sym,
-                $"ref={rw} state={st} level={level} {(above ? ">=" : "<=")} retr={retr}");
-
-            _feed.WatchLevel(sym, level, above, (s, ltp) =>
-            {
-                var fireAt = DateTime.Now;
-                if (!LivePortfolioAllows(fireAt))
-                {
-                    CompareLog("TICK_SKIP", s,
-                        $"portfolio block LTP={ltp} level={level} fireAt={fireAt:HH:mm:ss.fff}");
-                    return;
-                }
-
-                decimal sl = retr - config.StopLossBufferPoints;
-                decimal risk = ltp - sl;
-                if (risk <= 0)
-                {
-                    CompareLog("TICK_SKIP", s, $"risk<=0 LTP={ltp} sl={sl}");
-                    return;
-                }
-
-                decimal target = ltp + risk * rr;
-                // sync call into async entry
-                _ = TryTakeEntry(
-                    mode: "TICK",
-                    sym: s,
-                    cepe: cepe,
-                    px: ltp,
-                    sl: sl,
-                    tgt: target,
-                    entryTimeKey: fireAt,
-                    detail: $"ref={rw} state={st} level={level} LTP={ltp} fireAt={fireAt:HH:mm:ss.fff} feedLastTick={_feed.LastTickAt:HH:mm:ss.fff} tick#{_feed.TickCount}");
-            });
+            ArmTickFillAtRefHigh(sym, cepe, refHigh, sl, tgt, rw, now, now);
         }
 
         /// <summary>

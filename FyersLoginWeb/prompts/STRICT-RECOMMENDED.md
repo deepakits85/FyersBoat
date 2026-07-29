@@ -4,16 +4,18 @@ Branch: **`cursor/strict-recommended-90e4`**
 
 ## COMPARE mode (kal live)
 
-`UseCandleEntry=true` + `UseLiveEntry=true` — dono chalenge.
+`UseCandleEntry=true` + `UseLiveEntry=true`
 
-- Pehli jo fire kare → **paper ENTRY**
-- Doosri → **SHADOW** log (timing compare)
-- Log file: `bin/.../logs/live-compare-YYYY-MM-DD.log`  
-  columns: `HH:mm:ss.fff`, mode (`CLOSE_ENTRY` / `TICK_ENTRY` / `*_SHADOW` / `TICK_ARM`), symbol, detail
+**Rules (dono modes):**
+1. Breakout **sirf 3m CLOSE** confirm (wick nahi)
+2. Entry price = **reference candle HIGH** (LTP pe chase nahi)
 
-Events: `TICK_ARM`, `TICK_ENTRY`, `TICK_SHADOW`, `CLOSE_ENTRY`, `CLOSE_SHADOW`, `CLOSE_STALE`
+- **CLOSE** = close confirm ke baad poll pe entry @ ref high  
+- **TICK** = close confirm ke baad LTP jab ref-high touch kare → entry @ ref high (fill timing)  
+- Pehli → paper ENTRY; doosri → SHADOW  
+- Log: `logs/live-compare-YYYY-MM-DD.log` (`HH:mm:ss.fff`)
 
-## RAKHO (strategy rules same)
+## RAKHO (strategy rules)
 
 | Setting | Value |
 |---------|--------|
@@ -23,6 +25,8 @@ Events: `TICK_ARM`, `TICK_ENTRY`, `TICK_SHADOW`, `CLOSE_ENTRY`, `CLOSE_SHADOW`, 
 | RR | **1:2** |
 | 90 min wait | **ON** |
 | Sensex / 10:45 | **OFF** |
+| Breakout | **CLOSE confirm** |
+| Entry | **Reference HIGH** |
 
 ## MAT RAKHO
 

@@ -232,17 +232,13 @@ namespace FyersLoginWeb.Strategy
                         ? $"Breakout wick par Close {c.Close} < level {lvl}. Valid close ka intezaar."
                         : $"Breakdown wick par Close {c.Close} > level {lvl}. Valid close ka intezaar.");
 
-                // Entry: breakout candle KHUD cap tak trade kar chuki hai (price neeche se
-                // upar cap ko cross karke gayi), to entry USI candle par cap ke paas ho jati hai.
-                // Fill price = min(close, cap) [long] / max(close, cap) [short] — cap se upar nahi.
+                // Entry = REFERENCE candle high/low (cap), chase nahi.
+                // Close-confirm ke baad bhi fill price = ref High (long) / ref Low (short).
                 bool canFillNow = IsLong ? c.Low <= cap : c.High >= cap;
                 if (canFillNow)
-                {
-                    decimal entry = IsLong ? Math.Min(c.Close, cap) : Math.Max(c.Close, cap);
-                    return GenerateSignal(c, entry);
-                }
+                    return GenerateSignal(c, cap);
 
-                // gap: poori candle cap ke paar khul gayi -> pullback ka intezaar
+                // gap: poori candle cap ke paar khul gayi -> pullback ka intezaar (ref high pe entry)
                 State = StrategyState.WaitingForEntry;
                 return new StrategyResult
                 {
