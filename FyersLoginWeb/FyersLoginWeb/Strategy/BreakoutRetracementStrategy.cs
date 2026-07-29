@@ -232,21 +232,17 @@ namespace FyersLoginWeb.Strategy
                         ? $"Breakout wick par Close {c.Close} < level {lvl}. Valid close ka intezaar."
                         : $"Breakdown wick par Close {c.Close} > level {lvl}. Valid close ka intezaar.");
 
-                // Entry = REFERENCE candle high/low (cap), chase nahi.
-                // Close-confirm ke baad bhi fill price = ref High (long) / ref Low (short).
-                bool canFillNow = IsLong ? c.Low <= cap : c.High >= cap;
-                if (canFillNow)
-                    return GenerateSignal(c, cap);
-
-                // gap: poori candle cap ke paar khul gayi -> pullback ka intezaar (ref high pe entry)
+                // Close confirm IS candle ke BAND hone ke baad pata chalta hai —
+                // isliye USI candle pe entry possible nahi. Agli candle(s) pe
+                // price jab entry level (ref High/cap) pe aaye tab fill.
                 State = StrategyState.WaitingForEntry;
                 return new StrategyResult
                 {
                     State = State,
                     JustConfirmed = StrategyState.SecondBreakoutConfirmed,
                     Message = IsLong
-                        ? $"SECOND_BREAKOUT: candle cap ({cap}) se upar gap. Pullback ka intezaar."
-                        : $"SECOND_BREAKDOWN: candle cap ({cap}) se neeche gap. Pullback ka intezaar."
+                        ? $"SECOND_BREAKOUT CLOSE-OK (Close {c.Close} > {lvl}). Ab NEXT candles pe entry @ refHigh/cap {cap} ka wait."
+                        : $"SECOND_BREAKDOWN CLOSE-OK (Close {c.Close} < {lvl}). Ab NEXT candles pe entry @ refLow/cap {cap} ka wait."
                 };
             }
             // NOTE: actual threshold EffLevel hai (retracement-first me prior-high resistance
@@ -258,17 +254,18 @@ namespace FyersLoginWeb.Strategy
                 : $"Waiting 2nd breakdown: 3m Low {c.Low} >= level {EffLevel}{priorNote}.");
         }
 
-        // Step 4: price pullback me entry-zone tak aaya? to entry
+        // Step 4: CLOSE-confirm ke BAAD wali candles — price entry level (ref high) pe aaya?
+        // Confirm candle khud pe entry nahi (confirm close ke baad hi pata chalta hai).
         private StrategyResult HandleEntry(Candle c)
         {
-            // long: price neeche cap tak (Low <= cap) ; short: price upar cap tak (High >= cap)
+            // long: price neeche cap/refHigh tak (Low <= cap) ; short: High >= cap
             bool reached = IsLong ? c.Low <= EntryCapPrice : c.High >= EntryCapPrice;
             if (reached)
                 return GenerateSignal(c, EntryCapPrice);
 
             return Info(IsLong
-                ? $"Waiting entry: 3m Low {c.Low} > cap {EntryCapPrice}."
-                : $"Waiting entry: 3m High {c.High} < cap {EntryCapPrice}.");
+                ? $"Waiting entry (post close-confirm): 3m Low {c.Low} > cap/refHigh {EntryCapPrice}."
+                : $"Waiting entry (post close-confirm): 3m High {c.High} < cap/refLow {EntryCapPrice}.");
         }
 
         // Entry fill -> signal with SL/target

@@ -7,11 +7,12 @@ Branch: **`cursor/strict-recommended-90e4`**
 `UseCandleEntry=true` + `UseLiveEntry=true`
 
 **Rules (dono modes):**
-1. Breakout **sirf 3m CLOSE** confirm (wick nahi)
-2. Entry price = **reference candle HIGH** (LTP pe chase nahi)
+1. Breakout: 3m **Close > reference high** (confirm)
+2. Confirm candle pe entry **nahi** (confirm close ke baad hi pata chalta hai)
+3. **Uske baad** next candle/ticks pe price jab **ref high (entry)** pe aaye → entry
 
-- **CLOSE** = close confirm ke baad poll pe entry @ ref high  
-- **TICK** = close confirm ke baad LTP jab ref-high touch kare → entry @ ref high (fill timing)  
+- **CLOSE** = next 3m candle pe Low<=refHigh dikhe (us candle close ke baad signal)  
+- **TICK** = WaitingForEntry me LTP jab ref-high touch kare → turant @ ref high  
 - Pehli → paper ENTRY; doosri → SHADOW  
 - Log: `logs/live-compare-YYYY-MM-DD.log` (`HH:mm:ss.fff`)
 

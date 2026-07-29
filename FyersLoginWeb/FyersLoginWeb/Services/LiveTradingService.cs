@@ -258,10 +258,7 @@ namespace FyersLoginWeb.Services
                 }
                 decimal tgt = entryPx + risk * s.RiskRewardRatio;
 
-                // TICK fill-timing: LTP jab ref-high pe aaye (pullback), entry @ refHigh — wick breakout nahi
-                if (UseLiveEntry)
-                    ArmTickFillAtRefHigh(sym, cepe, refHigh, sl, tgt, rw, s.EntryTime, confirmAt);
-
+                // BuySignal = confirm ke BAAD wali candle ne ref-high touch kiya (usi confirm candle pe nahi)
                 if (UseCandleEntry)
                 {
                     await TryTakeEntry(
@@ -272,29 +269,28 @@ namespace FyersLoginWeb.Services
                         sl: sl,
                         tgt: tgt,
                         entryTimeKey: s.EntryTime,
-                        detail: $"BREAKOUT_CLOSE_OK entry=REF_HIGH={refHigh} (not LTP) ref={rw} " +
-                                $"candle={s.EntryTime:HH:mm:ss}-{confirmAt:HH:mm:ss} ageSinceClose={ageSinceClose:F2}m " +
-                                $"sigEntryWas={s.EntryPrice}");
+                        detail: $"POST_CONFIRM_ENTRY @REF_HIGH={refHigh} ref={rw} " +
+                                $"entryCandle={s.EntryTime:HH:mm:ss}-{confirmAt:HH:mm:ss} " +
+                                $"(confirm candle pe entry nahi; next candle pe level touch) age={ageSinceClose:F2}m");
                 }
             }
         }
 
         /// <summary>
-        /// TICK = sirf fill clock. Breakout pehle CLOSE se confirm. Entry @ ref high jab LTP &lt;= refHigh.
-        /// WaitingForSecondBreakout pe wick arm NAHI.
+        /// TICK fill: WaitingForEntry (close-confirm ho chuka) — LTP jab ref-high touch kare.
+        /// Confirm candle pe entry nahi; uske baad wale time pe @ ref high.
         /// </summary>
         private void ArmTickFillAtRefHigh(string sym, string cepe, decimal refHigh, decimal sl, decimal tgt,
-            string rw, DateTime signalCandle, DateTime confirmAt)
+            string rw, DateTime armedAt, DateTime confirmAt)
         {
             lock (_entryLock)
             {
                 if (_enteredByMode.ContainsKey(sym)) return;
             }
 
-            // Pullback to ref high: fire when LTP <= refHigh (above=false)
             CompareLog("TICK_ARM", sym,
-                $"fill@REF_HIGH={refHigh} when LTP<=level (no wick breakout) ref={rw} " +
-                $"closeConfirm={confirmAt:HH:mm:ss} candle={signalCandle:HH:mm:ss}");
+                $"POST_CONFIRM wait LTP<=REF_HIGH={refHigh} entry@REF_HIGH (not confirm candle) ref={rw} " +
+                $"armedAt={armedAt:HH:mm:ss.fff}");
 
             _feed.WatchLevel(sym, refHigh, above: false, (s, ltp) =>
             {
@@ -310,15 +306,14 @@ namespace FyersLoginWeb.Services
                     mode: "TICK",
                     sym: s,
                     cepe: cepe,
-                    px: refHigh,   // entry = reference high, not LTP chase
+                    px: refHigh,
                     sl: sl,
                     tgt: tgt,
                     entryTimeKey: fireAt,
-                    detail: $"FILL@REF_HIGH={refHigh} LTP={ltp} (breakout was CLOSE) ref={rw} " +
+                    detail: $"POST_CONFIRM FILL@REF_HIGH={refHigh} LTP={ltp} ref={rw} " +
                             $"fireAt={fireAt:HH:mm:ss.fff} feedLastTick={_feed.LastTickAt:HH:mm:ss.fff} tick#{_feed.TickCount}");
             });
 
-            // Pehle se LTP <= refHigh ho to turant fill (next tick ka wait mat karo)
             var cur = _feed.Ltp(sym);
             if (cur != null && cur.Value > 0 && cur.Value <= refHigh)
             {
@@ -329,14 +324,13 @@ namespace FyersLoginWeb.Services
                 if (LivePortfolioAllows(fireAt))
                 {
                     _ = TryTakeEntry("TICK", sym, cepe, refHigh, sl, tgt, fireAt,
-                        $"FILL@REF_HIGH={refHigh} LTP={cur} IMMEDIATE (breakout CLOSE) ref={rw}");
+                        $"POST_CONFIRM FILL@REF_HIGH={refHigh} LTP={cur} IMMEDIATE ref={rw}");
                 }
             }
         }
 
         /// <summary>
-        /// Gap case: close-confirm ho chuka, WaitingForEntry — LTP ref-high touch pe entry @ ref high.
-        /// Wick 2nd-breakout arm NAHI.
+        /// Close-confirm ke baad WaitingForEntry — next bars/ticks pe ref-high pe entry.
         /// </summary>
         private void TryArmLive(string sym, string cepe, List<Candle> opt, StrategyConfig config,
             TimeSpan rs, DateTime now)
@@ -351,12 +345,11 @@ namespace FyersLoginWeb.Services
             }
 
             var lm = StrategyBacktester.RunLongManager(opt, config, rs);
-            // Sirf pullback-to-ref-high state — WaitingForSecondBreakout = wick, skip
             if (lm.State != StrategyState.WaitingForEntry)
             {
                 if (lm.State == StrategyState.WaitingForSecondBreakout)
                     CompareLog("TICK_WAIT_CLOSE", sym,
-                        $"state={lm.State} — breakout CLOSE ka wait (wick pe entry nahi)");
+                        $"state={lm.State} — pehle CLOSE > refHigh chahiye; phir entry level ka wait");
                 return;
             }
 
@@ -365,7 +358,7 @@ namespace FyersLoginWeb.Services
                 now > refc.EndTime.AddMinutes(config.MaxReferenceWaitMinutes))
             { _feed.ClearWatch(sym); return; }
 
-            decimal refHigh = lm.EntryCapLevel; // buffers=0 => reference high
+            decimal refHigh = lm.EntryCapLevel;
             decimal retr = lm.RetracementLevel;
             decimal rr = config.RiskRewardRatio;
             decimal sl = retr - config.StopLossBufferPoints;
