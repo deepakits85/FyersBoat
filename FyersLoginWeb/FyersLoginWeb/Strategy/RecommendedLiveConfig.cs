@@ -26,7 +26,13 @@ namespace FyersLoginWeb.Strategy
         public const int MaxSlPerDay = 2;
         public const int MinGapMinutes = 30;
         public const int MaxReferenceWaitMinutes = 90;
-        public const int FreshSignalMaxAgeMinutes = 6; // catch signal within ~2 live polls after 3m close
+        /// <summary>
+        /// Candle CLOSE (bar EndTime) ke baad itne minute tak entry allow.
+        /// Strategy EntryTime = bar StartTime hai; live freshness EndTime se measure hoti hai
+        /// taaki close confirm ke turant baad trade miss na ho.
+        /// </summary>
+        public const int FreshSignalMaxAgeMinutes = 6;
+        public const int CandleMinutes = 3;
 
         public static TimeSpan SquareOffTime { get; } = new TimeSpan(14, 45, 0);
 

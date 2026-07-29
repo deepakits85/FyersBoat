@@ -12,12 +12,12 @@ using Microsoft.Extensions.Logging;
 namespace FyersLoginWeb.Services
 {
     /// <summary>
-    /// Market hours loop:
-    ///  - Exit management har 15s (paper marks from history 3m OHLC + 2:45 square-off)
-    ///  - Signal scan har ~60s (history 3m CLOSED candles → strategy → strict filters → paper entry)
+    /// Market hours loop (har ~15s):
+    ///  - Exit management (paper marks + 2:45 square-off)
+    ///  - Signal scan (history 3m CLOSED candles → close-confirm → paper entry)
     ///
-    /// Data source = Fyers History API (3-min OHLC). Websocket / every-tick NAHI.
-    /// Entry = 3m candle CLOSE confirm (RequireCloseConfirm). Wick-only turant entry NAHI.
+    /// Close-confirm = USI 3m candle ke band hone par decide — agli 3m candle ka wait NAHI.
+    /// Delay sirf poll gap (~15s max). Data = History API, tick stream nahi.
     /// </summary>
     public class LiveTradingService : BackgroundService
     {
@@ -40,7 +40,8 @@ namespace FyersLoginWeb.Services
             new("NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", RecommendedLiveConfig.BankRr,  RecommendedLiveConfig.StrikeStepBank,  1),
         };
 
-        private DateTime _lastSignalScan = DateTime.MinValue;
+        // last closed-bar end we already scanned — avoid re-logging; still re-run for late API
+        private DateTime _lastClosedBarEnd = DateTime.MinValue;
 
         public LiveTradingService(IServiceScopeFactory scopeFactory, ILogger<LiveTradingService> log,
             PaperBrokerOrders broker, PositionManager mgr)
@@ -55,7 +56,7 @@ namespace FyersLoginWeb.Services
         {
             _log.LogInformation(
                 "LiveTradingService started (PaperMode={Paper}). Config: refs={Refs} RR=1:2 strict " +
-                "closeConfirm=ON refWait=90m Sensex=OFF maxSL={MaxSl}/day",
+                "closeConfirm=ON (same-bar, no +3m wait) poll=15s Sensex=OFF maxSL={MaxSl}/day",
                 PaperMode,
                 string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\:mm"))),
                 RecommendedLiveConfig.MaxSlPerDay);
@@ -80,12 +81,8 @@ namespace FyersLoginWeb.Services
                         else
                         {
                             await ManageExits(hist, token.AccessToken, now);
-
-                            if ((now - _lastSignalScan).TotalSeconds >= 60)
-                            {
-                                await ScanSignals(hist, db, token.AccessToken, now);
-                                _lastSignalScan = now;
-                            }
+                            // Har 15s scan — candle close ke turant baad miss kam
+                            await ScanSignals(hist, db, token.AccessToken, now);
                         }
                     }
                 }
@@ -185,23 +182,32 @@ namespace FyersLoginWeb.Services
                 db.SaveSignal(sym, cepe, rw, s, "live");
                 if (decisions[cands[i]].Skipped) continue;
 
-                // Fresh only: backtester re-runs full day each poll — stale setups record-only
-                double ageMin = (now - s.EntryTime).TotalMinutes;
-                if (ageMin <= RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
+                // Freshness from CANDLE CLOSE (EntryTime=StartTime → EndTime = +3m).
+                // Close confirm = usi bar ke end par — agli bar ka +3m wait NAHI.
+                var confirmAt = s.EntryTime.AddMinutes(RecommendedLiveConfig.CandleMinutes);
+                double ageSinceClose = (now - confirmAt).TotalMinutes;
+                if (ageSinceClose >= -0.25 && ageSinceClose <= RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
                 {
                     int qty = SizeQty(sym, s.EntryPrice);
                     await _mgr.OnSignal(sym, cepe, qty, s.EntryPrice, s.StopLoss, s.Target, s.EntryTime);
                     _log.LogInformation(
-                        "LIVE ENTRY {Sym} {Side} @ {Px} SL {Sl} T {Tgt} ref {Ref} age={Age:F1}m qty={Qty}",
-                        sym, cepe, s.EntryPrice, s.StopLoss, s.Target, rw, ageMin, qty);
+                        "LIVE ENTRY {Sym} {Side} @ {Px} SL {Sl} T {Tgt} ref {Ref} sinceClose={Age:F1}m qty={Qty}",
+                        sym, cepe, s.EntryPrice, s.StopLoss, s.Target, rw, ageSinceClose, qty);
                 }
-                else
+                else if (ageSinceClose > RecommendedLiveConfig.FreshSignalMaxAgeMinutes)
                 {
                     _log.LogInformation(
-                        "LIVE take {Sym} {Entry:HH:mm} STALE ({Age:F0}m) — record only, entry NAHI",
-                        sym, s.EntryTime, ageMin);
+                        "LIVE take {Sym} {Entry:HH:mm} STALE (close+{Age:F0}m) — record only, entry NAHI",
+                        sym, s.EntryTime, ageSinceClose);
                 }
             }
+
+            var newestBarEnd = dayTrades
+                .Select(x => x.s.EntryTime.AddMinutes(RecommendedLiveConfig.CandleMinutes))
+                .DefaultIfEmpty(DateTime.MinValue)
+                .Max();
+            if (newestBarEnd > _lastClosedBarEnd)
+                _lastClosedBarEnd = newestBarEnd;
         }
 
         private static int SizeQty(string sym, decimal premium)
