@@ -29,8 +29,8 @@ Branch: **`cursor/strict-recommended-90e4`**
 | RR | **1:2** |
 | 90 min wait | **ON** |
 | Sensex / 10:45 | **OFF** |
-| Breakout | **CLOSE confirm vs refHigh** |
-| Entry | **Reference HIGH** |
+| Breakout | **CLOSE > reference HIGH** (LOCKED) |
+| Entry | **@ reference HIGH** after confirm bar (LOCKED) |
 
 ## MAT RAKHO
 
