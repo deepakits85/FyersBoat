@@ -117,12 +117,15 @@ else if (string.IsNullOrEmpty(access) || !await ProbeAsync(http, fyers.ClientId,
     }
 }
 
-if (mode == "index" && (fromDate != null || toDate != null))
+if ((mode == "index" || mode == "options") && (fromDate != null || toDate != null))
 {
     var start = fromDate ?? day;
     var end = toDate ?? day;
-    Console.WriteLine($"=== Index range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
-    await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters);
+    Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
+    if (mode == "index")
+        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters);
+    else
+        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters);
 }
 else
 {
@@ -555,6 +558,175 @@ static string? ResolveOptionSymbol(Dictionary<(long strike, string cepe), string
     if (candidates.Count == 0) return null;
     long nearest = candidates.OrderBy(s => Math.Abs(s - strike)).First();
     return map[(nearest, cepe)];
+}
+
+static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string access,
+    DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
+    string dumpPath, EntryFilterConfig entryFilters)
+{
+    // Cache-first ATM CE/PE backtest (same as live bot symbol style YYMMM for monthly weeklies in July cache).
+    var legs = new[]
+    {
+        new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 2m, 50m, 0),
+        new Leg("sensex", "BSE:SENSEX-INDEX", "BSE:SENSEX", 3m, 100m, 1),
+        new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 2m, 100m, 2),
+    };
+
+    var raw = new List<OptRow>();
+    int days = 0, hits = 0, misses = 0;
+
+    for (var day = from.Date; day <= to.Date; day = day.AddDays(1))
+    {
+        if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+        string yy = day.ToString("yy");
+        string mmm = day.ToString("MMM", CultureInfo.InvariantCulture).ToUpper();
+        bool dayHit = false;
+
+        foreach (var leg in legs)
+        {
+            var idx = await GetCandlesAsync(http, clientId, access, leg.Index, "3", day, cacheDirs);
+            if (idx.Count == 0) continue;
+
+            var config = new StrategyConfig
+            {
+                EntryBufferPoints = 0m,
+                StopLossBufferPoints = 0m,
+                RiskRewardRatio = leg.RR,
+                UseTrailing = trailing,
+                UseSquareOff = true,
+                UseReferenceMaxWait = true
+            };
+            config.SetRetracementFromPercentage(50m);
+
+            foreach (var rs in refs)
+            {
+                var monStart = rs.Add(TimeSpan.FromMinutes(30));
+                var spotCandle = idx.FirstOrDefault(c => c.StartTime.TimeOfDay == monStart);
+                if (spotCandle == null) continue;
+                long strike = (long)(Math.Round(spotCandle.Open / leg.Step) * leg.Step);
+
+                foreach (var cepe in new[] { "CE", "PE" })
+                {
+                    // Primary: classic YYMMM (matches July datacache). Fallback: try ±1 strike.
+                    var tryStrikes = new[] { strike, strike - (long)leg.Step, strike + (long)leg.Step };
+                    List<Candle>? opt = null;
+                    string? sym = null;
+                    foreach (var st in tryStrikes)
+                    {
+                        string candidate = $"{leg.OptRoot}{yy}{mmm}{st}{cepe}";
+                        var candles = await GetCandlesAsync(http, clientId, access, candidate, "3", day, cacheDirs);
+                        if (candles.Count == 0) { misses++; continue; }
+                        opt = candles; sym = candidate; hits++;
+                        break;
+                    }
+                    if (opt == null || sym == null) continue;
+                    dayHit = true;
+
+                    var res = StrategyBacktester.Run(opt, config, rs);
+                    foreach (var s in res.BuySignals)
+                        raw.Add(new OptRow(sym, cepe, leg.OptRoot + "|" + cepe, leg.Priority, s));
+                }
+            }
+        }
+        if (dayHit) days++;
+    }
+
+    Console.WriteLine($"Days with any option hit: {days}  cache/api hits≈{hits} misses≈{misses}  rawSignals={raw.Count}");
+
+    // overlap dedup same underlying+CE/PE
+    var openUntil = new Dictionary<string, DateTime>();
+    var survivors = new List<OptRow>();
+    foreach (var t in raw.OrderBy(x => x.Sig.EntryTime))
+    {
+        if (openUntil.TryGetValue(t.Dkey, out var busy) && t.Sig.EntryTime <= busy) continue;
+        openUntil[t.Dkey] = t.Sig.OutcomeTime ?? t.Sig.EntryTime.Date.AddHours(15).AddMinutes(30);
+        survivors.Add(t);
+    }
+
+    int before = survivors.Count;
+    survivors = survivors.Where(t => entryFilters.Allows(t.Sig, t.Sym)).ToList();
+    Console.WriteLine($"After overlap dedup: {before} → filters [{entryFilters}]: {survivors.Count}");
+
+    var cands = survivors.Select(x => new LiveCand(x.Sig, x.Priority)).ToList();
+    var decisions = PortfolioSelector.Select(cands, maxSlPerDay: maxSl, minGapMinutes: gap);
+    var taken = new List<OptRow>();
+    for (int i = 0; i < survivors.Count; i++)
+        if (!decisions[cands[i]].Skipped) taken.Add(survivors[i]);
+
+    void PrintOpt(IEnumerable<OptRow> list, string title)
+    {
+        Console.WriteLine($"\n--- {title} ---");
+        PrintTrades(list.OrderBy(t => t.Sig.EntryTime).Select(t =>
+            $"{t.Sig.EntryTime:yyyy-MM-dd HH:mm}  {t.Sym,-28} {t.Cepe}  " +
+            $"entry {t.Sig.EntryPrice,7:F1}  SL {t.Sig.StopLoss,7:F1}  risk {(t.Sig.Risk):F1}pt  " +
+            $"T {t.Sig.Target,7:F1}  {t.Sig.Outcome,-12} R={t.Sig.RealizedR,6:F2}  ref {t.Sig.Reference.StartTime:HH:mm}"));
+    }
+
+    PrintOpt(survivors, "RAW (dedup+filters)");
+    PrintOpt(taken, "TAKEN (portfolio)");
+
+    Console.WriteLine("\nRAW summary:");
+    Summarize(survivors.Select(s => s.Sig));
+    Console.WriteLine("\nTAKEN summary:");
+    Summarize(taken.Select(t => t.Sig));
+
+    // Premium / SL-points stats for user's 100/10/20 model
+    if (taken.Count > 0)
+    {
+        var entries = taken.Select(t => t.Sig.EntryPrice).OrderBy(x => x).ToList();
+        var risks = taken.Select(t => t.Sig.Risk).OrderBy(x => x).ToList();
+        decimal Median(List<decimal> xs) => xs[xs.Count / 2];
+        Console.WriteLine("\n--- Premium / risk points (TAKEN) ---");
+        Console.WriteLine($"Entry premium: min={entries.First():F1} med={Median(entries):F1} max={entries.Last():F1}");
+        Console.WriteLine($"SL distance (pts): min={risks.First():F1} med={Median(risks):F1} max={risks.Last():F1}");
+
+        // Rupee sim: qty such that premium notional ≈ capital, and 1R = qty * riskPts
+        const decimal capital = 100000m;
+        Console.WriteLine("\n--- ₹ sim on TAKEN (1L capital) ---");
+        decimal pnlFixedQty = 0;
+        const int qty = 1000; // user model
+        foreach (var t in taken)
+        {
+            // points P&L ≈ RealizedR * Risk (since R is multiple of risk points)
+            decimal pts = t.Sig.RealizedR * t.Sig.Risk;
+            pnlFixedQty += pts * qty;
+        }
+        Console.WriteLine($"If ALWAYS qty={qty}: total P&L ≈ ₹{pnlFixedQty:N0}  over {taken.Count} trades  (avg/trade ₹{(pnlFixedQty / taken.Count):N0})");
+
+        // size so premium deploy ≈ 25% capital (live bot style) OR full capital
+        decimal pnlDeploy = 0;
+        foreach (var t in taken)
+        {
+            if (t.Sig.EntryPrice <= 0) continue;
+            int q = Math.Max(75, (int)(Math.Floor((capital * 0.25m) / (t.Sig.EntryPrice * 75m)) * 75m)); // lot=75 approx nifty
+            // For Sensex/Bank lot differs; keep simple lot 75 for ballpark only on Nifty-like
+            if (t.Sym.Contains("BANKNIFTY")) q = Math.Max(35, (int)(Math.Floor((capital * 0.25m) / (t.Sig.EntryPrice * 35m)) * 35m));
+            if (t.Sym.Contains("SENSEX")) q = Math.Max(20, (int)(Math.Floor((capital * 0.25m) / (t.Sig.EntryPrice * 20m)) * 20m));
+            pnlDeploy += t.Sig.RealizedR * t.Sig.Risk * q;
+        }
+        Console.WriteLine($"If live-style ~25% capital deploy: total P&L ≈ ₹{pnlDeploy:N0}");
+    }
+
+    if (!string.IsNullOrEmpty(dumpPath))
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dumpPath))!);
+        using var sw = new StreamWriter(dumpPath);
+        sw.WriteLine("taken,sym,cepe,side,ref,entry,exit,entryPx,sl,riskPt,target,outcome,R,prio");
+        for (int i = 0; i < survivors.Count; i++)
+        {
+            var t = survivors[i];
+            var s = t.Sig;
+            bool isTaken = !decisions[cands[i]].Skipped;
+            sw.WriteLine(string.Join(',',
+                isTaken ? 1 : 0, t.Sym, t.Cepe, s.IsLong ? "LONG" : "SHORT",
+                s.Reference.StartTime.ToString("HH:mm"),
+                s.EntryTime.ToString("yyyy-MM-dd HH:mm"),
+                s.OutcomeTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
+                s.EntryPrice.ToString("F2"), s.StopLoss.ToString("F2"), s.Risk.ToString("F2"),
+                s.Target.ToString("F2"), s.Outcome, s.RealizedR.ToString("F3"), t.Priority));
+        }
+        Console.WriteLine($"\nDump: {dumpPath}");
+    }
 }
 
 static async Task RunOptionsAsync(HttpClient http, string clientId, string access, DateTime day,
