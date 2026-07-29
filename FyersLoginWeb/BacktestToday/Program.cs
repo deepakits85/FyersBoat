@@ -296,10 +296,53 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
     Summarize(all.Select(a => a.Sig));
 }
 
+static async Task<(string expiryLabel, Dictionary<(long strike, string cepe), string> symbols)>
+    LoadNearestChainAsync(HttpClient http, string clientId, string access, string index)
+{
+    string url = "https://api-t1.fyers.in/data/options-chain-v3" +
+                 $"?symbol={Uri.EscapeDataString(index)}&strikecount=20";
+    using var req = new HttpRequestMessage(HttpMethod.Get, url);
+    req.Headers.TryAddWithoutValidation("Authorization", $"{clientId}:{access}");
+    using var resp = await http.SendAsync(req);
+    string body = await resp.Content.ReadAsStringAsync();
+    if (!resp.IsSuccessStatusCode)
+        throw new Exception($"Option chain HTTP {(int)resp.StatusCode}: {body}");
+
+    var json = JObject.Parse(body);
+    var data = json["data"] as JObject ?? throw new Exception("Option chain: no data");
+    var expiries = data["expiryData"] as JArray ?? new JArray();
+    string label = expiries.FirstOrDefault()?["date"]?.ToString() ?? "?";
+    string flag = expiries.FirstOrDefault()?["expiry_flag"]?.ToString() ?? "?";
+
+    var map = new Dictionary<(long strike, string cepe), string>();
+    foreach (var row in data["optionsChain"] as JArray ?? new JArray())
+    {
+        string sym = row["symbol"]?.ToString() ?? "";
+        string ot = row["option_type"]?.ToString() ?? "";
+        if (ot is not ("CE" or "PE")) continue;
+        if (!long.TryParse(row["strike_price"]?.ToString(), out long strike)) continue;
+        map[(strike, ot)] = sym;
+    }
+    Console.WriteLine($"  chain nearest expiry={label} ({flag}), strikes={map.Count / 2}");
+    return ($"{label}/{flag}", map);
+}
+
+static string? ResolveOptionSymbol(Dictionary<(long strike, string cepe), string> map,
+    long strike, string cepe, decimal step)
+{
+    if (map.TryGetValue((strike, cepe), out var exact)) return exact;
+    // nearest available strike on chain
+    var candidates = map.Keys.Where(k => k.cepe == cepe).Select(k => k.strike).ToList();
+    if (candidates.Count == 0) return null;
+    long nearest = candidates.OrderBy(s => Math.Abs(s - strike)).First();
+    return map[(nearest, cepe)];
+}
+
 static async Task RunOptionsAsync(HttpClient http, string clientId, string access, DateTime day,
     List<TimeSpan> refs, bool trailing)
 {
     // Live bot style: ATM CE/PE on monitoring-start spot, refs 10:45/11:15/12:45
+    // Symbols come from Fyers options-chain (handles weekly YYMDD vs monthly YYMMM).
     var legs = new[]
     {
         new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 2m, 50m, 0),
@@ -307,15 +350,14 @@ static async Task RunOptionsAsync(HttpClient http, string clientId, string acces
         new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 2m, 100m, 2),
     };
 
-    string yy = day.ToString("yy");
-    string mmm = day.ToString("MMM", CultureInfo.InvariantCulture).ToUpper();
-
     var raw = new List<OptRow>();
     foreach (var leg in legs)
     {
         var idx = await GetCandlesAsync(http, clientId, access, leg.Index, "3", day);
         Console.WriteLine($"{leg.Index}: {idx.Count} candles");
         if (idx.Count == 0) continue;
+
+        var (_, chain) = await LoadNearestChainAsync(http, clientId, access, leg.Index);
 
         var config = new StrategyConfig
         {
@@ -342,7 +384,12 @@ static async Task RunOptionsAsync(HttpClient http, string clientId, string acces
 
             foreach (var cepe in new[] { "CE", "PE" })
             {
-                string sym = $"{leg.OptRoot}{yy}{mmm}{strike}{cepe}";
+                string? sym = ResolveOptionSymbol(chain, strike, cepe, leg.Step);
+                if (sym == null)
+                {
+                    Console.WriteLine($"    {leg.OptRoot} {strike}{cepe}: not on chain");
+                    continue;
+                }
                 var opt = await GetCandlesAsync(http, clientId, access, sym, "3", day);
                 await Task.Delay(250);
                 if (opt.Count == 0)
