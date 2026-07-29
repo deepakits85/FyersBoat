@@ -83,7 +83,8 @@ if (File.Exists(tokenPath))
 string authCode = Environment.GetEnvironmentVariable("FYERS_AUTH_CODE") ?? GetArg("--auth-code", "");
 if (cacheOnly)
 {
-    access = string.IsNullOrEmpty(access) ? "CACHE_ONLY" : access;
+    // Token ho to bhi API band — warna miss symbols pe rate-limit / wrong-day fetch.
+    access = "CACHE_ONLY";
     Console.WriteLine("CACHE-ONLY mode: API skip, sirf local datacache.\n");
 }
 else if (!string.IsNullOrEmpty(authCode))
