@@ -22,6 +22,13 @@ namespace FyersLoginWeb.Services.Broker
         private readonly List<ManagedPosition> _positions = new();
         private readonly object _lock = new();
 
+        // ---- Trailing (StrategyConfig defaults ke saath match — decided config, backtest jaisा) ----
+        // 2R reach -> SL entry+1 (risk-free), target 2.5R. Sab legs par same (activation 2R, target 2.5R).
+        private const bool UseTrailing = true;
+        private const decimal TrailActivateRR = 2m;
+        private const decimal TrailStopOffset = 1m;
+        private const decimal TrailTargetRR = 2.5m;
+
         public PositionManager(IBrokerOrders broker, ILogger log, TimeSpan? squareOff = null)
         {
             _broker = broker;
@@ -44,7 +51,8 @@ namespace FyersLoginWeb.Services.Broker
             var mp = new ManagedPosition
             {
                 Symbol = symbol, Side = side, Qty = qty, Entry = entry, SL = sl, Target = target,
-                EntryTime = entryTime, State = "ENTRY_PENDING"
+                EntryTime = entryTime, State = "ENTRY_PENDING",
+                InitRisk = entry - sl                       // trailing SL badle bhi R isi se gine
             };
             mp.BuyId = await _broker.PlaceBuyLimit(symbol, qty, entry);
             lock (_lock) _positions.Add(mp);
@@ -68,11 +76,14 @@ namespace FyersLoginWeb.Services.Broker
                     {
                         if (bo.Status == OrderStatus.Filled)
                         {
-                            // SAFETY PEHLE: SL-M, phir target
+                            // SAFETY PEHLE: SL-M, phir target. Trailing ON -> target 2.5R
+                            // (2R se pehle original SL; 2R reach hone par SL entry+1 pe move hoga — CheckTrail).
+                            if (UseTrailing) p.Target = p.Entry + TrailTargetRR * p.InitRisk;
                             p.SlId = await _broker.PlaceSlMarketSell(p.Symbol, p.Qty, p.SL);
                             p.TargetId = await _broker.PlaceLimitSell(p.Symbol, p.Qty, p.Target);
                             p.State = "OPEN";
-                            _log.LogInformation($"[EXEC] OPEN {p.Symbol}: SL-M @ {p.SL} + target @ {p.Target}");
+                            _log.LogInformation($"[EXEC] OPEN {p.Symbol}: SL-M @ {p.SL} + target @ {p.Target}" +
+                                (UseTrailing ? $" (trail: 2R@{p.Entry + TrailActivateRR * p.InitRisk} -> SL entry+{TrailStopOffset})" : ""));
                         }
                         else if (bo.Status == OrderStatus.Cancelled || bo.Status == OrderStatus.Rejected)
                         {
@@ -93,7 +104,8 @@ namespace FyersLoginWeb.Services.Broker
                     else if (sl)
                     {
                         await CancelIfPending(p.TargetId, byId);
-                        Close(p, "StopLossHit", byId[p.SlId!].FillPrice, now);
+                        // trail ho chuka tha to SL ab entry+1 par thi -> TrailStopHit (breakeven+), warna asli SL
+                        Close(p, p.Trailed ? "TrailStopHit" : "StopLossHit", byId[p.SlId!].FillPrice, now);
                     }
                     else if (now.TimeOfDay >= _squareOff)
                     {
@@ -117,6 +129,30 @@ namespace FyersLoginWeb.Services.Broker
         {
             if (orderId != null && byId.TryGetValue(orderId, out var o) && o.Status == OrderStatus.Pending)
                 await _broker.CancelOrder(orderId);
+        }
+
+        /// <summary>
+        /// Har mark ke baad call karo: OPEN position ne 2R (TrailActivateRR) chhu liya to SL ko
+        /// entry+1 (TrailStopOffset) pe move kar do — risk-free. Ek hi baar (Trailed). Target pehle
+        /// se 2.5R par hai. Backtest ke Phase-A/B se match: activating candle original SL par, naya
+        /// SL agle candle se effective. (Target 2.5R same/agle candle par fill ho sakta hai.)
+        /// </summary>
+        public async Task CheckTrail(string symbol, decimal high, DateTime now)
+        {
+            if (!UseTrailing) return;
+            ManagedPosition? p;
+            lock (_lock) p = _positions.FirstOrDefault(x => x.Symbol == symbol && x.State == "OPEN" && !x.Trailed);
+            if (p == null) return;
+
+            decimal activate = p.Entry + TrailActivateRR * p.InitRisk;
+            if (high < activate) return;
+
+            if (p.SlId != null) await _broker.CancelOrder(p.SlId);
+            decimal newSl = p.Entry + TrailStopOffset;
+            p.SlId = await _broker.PlaceSlMarketSell(p.Symbol, p.Qty, newSl);
+            p.SL = newSl;
+            p.Trailed = true;
+            _log.LogInformation($"[EXEC] TRAIL {p.Symbol}: 2R ({activate}) reached -> SL -> entry+{TrailStopOffset} ({newSl}), target stays {p.Target}");
         }
 
         private void Close(ManagedPosition p, string outcome, decimal exitPrice, DateTime now)

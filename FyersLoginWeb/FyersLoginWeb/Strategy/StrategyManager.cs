@@ -39,6 +39,10 @@ namespace FyersLoginWeb.Strategy
         public ReferenceCandle? CurrentReference => _strategy.Reference;
         public TradeSide Side => _strategy.Side;
 
+        // Live real-time entry: next entry level + SL base (retracement)
+        public decimal EntryCapLevel => _strategy.EntryCapPrice;
+        public decimal RetracementLevel => _strategy.RetracementLevel;
+
         // Cycle active = first breach ho chuka par abhi signal nahi (reference lock ke liye)
         private bool IsActiveCycle =>
             _strategy.State == StrategyState.WaitingForRetracement ||

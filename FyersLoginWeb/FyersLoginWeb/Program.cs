@@ -12,6 +12,7 @@ builder.Services.Configure<FyersSettings>(builder.Configuration.GetSection("Fyer
 builder.Services.AddHttpClient<FyersAuthService>();
 builder.Services.AddHttpClient<FyersHistoryService>();
 builder.Services.AddSingleton<DbService>();
+builder.Services.AddSingleton<FyersLiveFeed>();
 
 // Paper broker + position manager — SINGLETON (LiveTradingService aur Dashboard dono share karein)
 builder.Services.AddSingleton<PaperBrokerOrders>(sp =>

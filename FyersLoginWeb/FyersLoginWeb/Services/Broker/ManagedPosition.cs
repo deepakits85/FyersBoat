@@ -19,16 +19,20 @@ namespace FyersLoginWeb.Services.Broker
         public string? TargetId { get; set; }
         public string? ExitId { get; set; }               // 2:45 market sell
 
-        public string? Outcome { get; set; }              // TargetHit / StopLossHit / TimeExit / EntryFail
+        public string? Outcome { get; set; }              // TargetHit / StopLossHit / TrailStopHit / TimeExit / EntryFail
         public decimal ExitPrice { get; set; }
         public DateTime? ClosedAt { get; set; }
 
-        // realized R (long premium): (exit - entry) / (entry - SL)
+        // ---- trailing state ----
+        public decimal InitRisk { get; set; }             // ORIGINAL risk (entry - pehla SL); trailing SL badle bhi R isi se
+        public bool Trailed { get; set; }                 // 2R reach hone par SL entry+1 pe move ho chuka
+
+        // realized R (long premium): (exit - entry) / ORIGINAL risk (trailing ke baad SL badalta hai isliye InitRisk)
         public decimal RealizedR
         {
             get
             {
-                decimal risk = Entry - SL;
+                decimal risk = InitRisk > 0 ? InitRisk : Entry - SL;
                 if (Outcome == null || Outcome == "EntryFail" || risk == 0) return 0m;
                 return Math.Round((ExitPrice - Entry) / risk, 2);
             }

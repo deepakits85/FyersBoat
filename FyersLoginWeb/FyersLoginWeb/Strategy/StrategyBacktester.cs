@@ -171,6 +171,60 @@ namespace FyersLoginWeb.Strategy
             };
         }
 
+        /// <summary>
+        /// LIVE tick entry: candles-so-far feed karke LONG manager ki CURRENT state return.
+        /// WaitingForSecondBreakout / WaitingForEntry pe EntryCapLevel watch arm hota hai.
+        /// </summary>
+        public static StrategyManager RunLongManager(IEnumerable<Candle> threeMinCandles,
+            StrategyConfig config, TimeSpan? onlyRefStart = null)
+        {
+            var threeMin = threeMinCandles.OrderBy(c => c.StartTime).ToList();
+
+            var windowAgg = new Dictionary<DateTime, Candle>();
+            foreach (var c in threeMin)
+            {
+                var w = MarketSession.GetReferenceWindow(c.StartTime);
+                if (w == null) continue;
+                var start = w.Value.start;
+                if (!windowAgg.TryGetValue(start, out var agg))
+                    windowAgg[start] = new Candle(start, w.Value.end, c.Open, c.High, c.Low, c.Close);
+                else { agg.High = Math.Max(agg.High, c.High); agg.Low = Math.Min(agg.Low, c.Low); agg.Close = c.Close; }
+            }
+            var windows = windowAgg.Values.OrderBy(w => w.EndTime).ToList();
+
+            var priorHigh = new decimal?[windows.Count];
+            var priorLow = new decimal?[windows.Count];
+            if (config.UsePriorLevelBreak)
+            {
+                for (int i = 0; i < windows.Count; i++)
+                {
+                    int from = Math.Max(0, i - config.PriorLevelLookback);
+                    decimal? ph = null, pl = null;
+                    for (int j = from; j < i; j++)
+                    {
+                        ph = ph.HasValue ? Math.Max(ph.Value, windows[j].High) : windows[j].High;
+                        pl = pl.HasValue ? Math.Min(pl.Value, windows[j].Low) : windows[j].Low;
+                    }
+                    priorHigh[i] = ph; priorLow[i] = pl;
+                }
+            }
+
+            var longMgr = new StrategyManager(config, TradeSide.Long);
+            int wi = 0;
+            foreach (var c in threeMin)
+            {
+                while (wi < windows.Count && windows[wi].EndTime <= c.StartTime)
+                {
+                    int idx = wi; var win = windows[wi]; wi++;
+                    if (onlyRefStart != null && win.StartTime.TimeOfDay != onlyRefStart.Value) continue;
+                    longMgr.OnThirtyMinuteCandleClosed(win, priorHigh[idx], priorLow[idx]);
+                }
+                if (longMgr.CurrentReference != null)
+                    longMgr.OnThreeMinuteCandleClosed(c);
+            }
+            return longMgr;
+        }
+
         // Entry ke baad outcome. Trailing on ho to:
         //   - price 2R (TrailActivateRR) tak jaye -> SL entry±offset, target 2.5R (TrailTargetRR)
         private static void EvaluateOutcomes(List<TradeSignal> signals, List<Candle> threeMin, StrategyConfig cfg)
