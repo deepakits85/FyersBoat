@@ -319,12 +319,15 @@ static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId
         var arr = json["candles"] as JArray ?? new JArray();
         int resMinutes = int.TryParse(resolution, out int rm) ? rm : 3;
         var ist = TimeSpan.FromHours(5.5);
-        var list = new List<Candle>();
+        // Fyers kabhi identical StartTime rows duplicate karta hai (e.g. 250=125×2).
+        // Dedupe zaroori: warna close-confirm ke baad WaitingForEntry turant
+        // duplicate candle pe fill ho jati hai (same bar pe confirm+entry).
+        var byStart = new SortedDictionary<DateTime, Candle>();
         foreach (var row in arr)
         {
             long epoch = row[0]!.Value<long>();
             DateTime startIst = DateTimeOffset.FromUnixTimeSeconds(epoch).UtcDateTime.Add(ist);
-            list.Add(new Candle
+            byStart[startIst] = new Candle
             {
                 StartTime = startIst,
                 EndTime = startIst.AddMinutes(resMinutes),
@@ -332,8 +335,9 @@ static async Task<List<Candle>> GetCandlesAsync(HttpClient http, string clientId
                 High = row[2]!.Value<decimal>(),
                 Low = row[3]!.Value<decimal>(),
                 Close = row[4]!.Value<decimal>()
-            });
+            };
         }
+        var list = byStart.Values.ToList();
         if (cacheDirs != null) SaveCache(cacheDirs, symbol, resolution, day, list);
         return list;
     }
