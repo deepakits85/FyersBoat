@@ -151,9 +151,9 @@ namespace FyersLoginWeb.Services
                 }
             }
 
-            // Data-driven SL-reduction filters (skip 10:45 / Tue / too-early entries)
-            var entryFilter = EntryFilterConfig.ReduceStopLossPreset();
-            dayTrades = dayTrades.Where(x => entryFilter.Allows(x.s)).ToList();
+            // Data-driven SL-reduction filters (strict: skip 10:45/Tue/Sensex, lag≥30, min risk)
+            var entryFilter = EntryFilterConfig.ReduceStopLossStrictPreset();
+            dayTrades = dayTrades.Where(x => entryFilter.Allows(x.s, x.sym)).ToList();
 
             // overlap dedup (underlying+side)
             var openUntil = new Dictionary<string, DateTime>();

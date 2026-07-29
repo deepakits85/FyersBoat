@@ -38,6 +38,8 @@ var refs = GetArg("--refs", "10:45,11:15,12:45")
 EntryFilterConfig entryFilters = filterPreset switch
 {
     "reduce-sl" or "reducesl" or "sl" => EntryFilterConfig.ReduceStopLossPreset(),
+    "reduce-sl-strict" or "strict" => EntryFilterConfig.ReduceStopLossStrictPreset(),
+    "reduce-sl-ultra" or "ultra" => EntryFilterConfig.ReduceStopLossUltraPreset(),
     _ => new EntryFilterConfig()
 };
 
@@ -437,7 +439,7 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
     Console.WriteLine($"\nDays with data: {daysWithData}  cacheHits={cacheHits} apiHits={apiHits}  rawSignals={raw.Count}");
 
     int beforeFilter = raw.Count;
-    raw = raw.Where(r => entryFilters.Allows(r.Sig)).ToList();
+    raw = raw.Where(r => entryFilters.Allows(r.Sig, r.Name)).ToList();
     Console.WriteLine($"Entry filters [{entryFilters}]: {beforeFilter} -> {raw.Count} signals kept");
 
     var cands = raw.Select(r => new LiveCand(r.Sig, r.Priority)).ToList();
