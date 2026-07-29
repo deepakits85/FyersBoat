@@ -5,10 +5,12 @@ using System.Linq;
 namespace FyersLoginWeb.Strategy
 {
     /// <summary>
-    /// Final live defaults (A/B backed):
+    /// STRICT live defaults — 29 Jul 2026 A/B findings
+    /// (branch: cursor/strict-recommended-90e4).
+    ///
     /// Nifty + BankNifty only, refs 11:15 + 12:45, strict filters, RR 1:2,
     /// 90-min ref max-wait ON, close-confirm ON, trailing ON, 30m gap, max 2 SL/day.
-    /// Sensex OFF. 10:45 OFF.
+    /// Sensex OFF. 10:45 OFF. Tick entry OFF by default (UseLiveEntry=false).
     /// </summary>
     public static class RecommendedLiveConfig
     {
