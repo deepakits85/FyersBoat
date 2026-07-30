@@ -418,12 +418,7 @@ namespace FyersLoginWeb.Services
 
         private bool LivePortfolioAllows(DateTime now)
         {
-            var today = _mgr.Positions.Where(p => p.EntryTime.Date == now.Date).ToList();
-            if (today.Count(p => p.Outcome is "StopLossHit" or "TrailStopHit") >= RecommendedLiveConfig.MaxSlPerDay)
-                return false;
-            if (today.Count > 0 &&
-                (now - today.Max(p => p.EntryTime)).TotalMinutes < RecommendedLiveConfig.MinGapMinutes)
-                return false;
+            // User: koi portfolio rule nahi — har signal allowed
             return true;
         }
 

@@ -11,7 +11,8 @@ namespace FyersLoginWeb.Strategy
     ///   - First BO: 3m CLOSE &gt; ref High (short: CLOSE &lt; ref Low)
     ///   - Retracement: &gt; 20% of ref range
     ///   - Second BO: entry on breakout touch (wick) — close wait nahi
-    ///   - SL: ref 50% | Target: 1:3 | no trail / no filters / no prior / no retr-first / no freshness
+    ///   - SL: ref 50% | Target: 1:3
+    ///   - KOI AUR RULE NAHI: no trail, prior, filters, gap, maxSL, freshness, 90m, square-off
     /// </summary>
     public static class RecommendedLiveConfig
     {
@@ -27,10 +28,11 @@ namespace FyersLoginWeb.Strategy
         public const decimal StrikeStepBank = 100m;
         public const decimal StrikeStepSensex = 100m;
 
-        public const int MaxSlPerDay = 2;
-        public const int MinGapMinutes = 30;
+        // Portfolio limits OFF (user: sirf strategy rule)
+        public const int MaxSlPerDay = 999;
+        public const int MinGapMinutes = 0;
         public const int MaxReferenceWaitMinutes = 90;
-        public const int FreshSignalMaxAgeMinutes = 6;
+        public const int FreshSignalMaxAgeMinutes = 999; // stale skip OFF
         public const int CandleMinutes = 3;
 
         public static TimeSpan SquareOffTime { get; } = new TimeSpan(14, 45, 0);
@@ -46,7 +48,7 @@ namespace FyersLoginWeb.Strategy
                 StopLossBufferPoints = 0m,
                 RiskRewardRatio = riskReward,
                 UseTrailing = false,
-                UseSquareOff = true,
+                UseSquareOff = false,
                 SquareOffTime = SquareOffTime,
                 UseReferenceMaxWait = false,
                 FirstBreakoutRequireClose = true,
