@@ -149,7 +149,7 @@ if ((mode == "index" || mode == "options") && (fromDate != null || toDate != nul
     if (mode == "index")
         await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex, MatchSym, useRecommended, forcePrior, forceNoPrior);
     else
-        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex);
+        await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex, MatchSym);
 }
 else
 {
@@ -615,18 +615,42 @@ static string? ResolveOptionSymbol(Dictionary<(long strike, string cepe), string
     return map[(nearest, cepe)];
 }
 
+/// <summary>Fyers weekly codes: YY + M + DD (Oct/Nov/Dec = O/N/D). Also monthly YYMMM.</summary>
+static IEnumerable<string> GuessOptionSymbols(string optRoot, DateTime day, long strike, string cepe, decimal step)
+{
+    static string MonthCode(int m) => m switch { 10 => "O", 11 => "N", 12 => "D", _ => m.ToString(CultureInfo.InvariantCulture) };
+    // this week's Thursday expiry + next Thursday
+    int delta = ((int)DayOfWeek.Thursday - (int)day.DayOfWeek + 7) % 7;
+    var thu = day.Date.AddDays(delta);
+    foreach (var exp in new[] { thu, thu.AddDays(7), day })
+    {
+        string yy = exp.ToString("yy");
+        string m = MonthCode(exp.Month);
+        string dd = exp.ToString("dd");
+        string mmm = exp.ToString("MMM", CultureInfo.InvariantCulture).ToUpperInvariant();
+        foreach (var st in new[] { strike, strike - (long)step, strike + (long)step })
+        {
+            yield return $"{optRoot}{yy}{m}{dd}{st}{cepe}";   // weekly YYMDD
+            yield return $"{optRoot}{yy}{mmm}{st}{cepe}";     // monthly YYMMM
+        }
+    }
+}
+
 static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
     string dumpPath, EntryFilterConfig entryFilters, bool refWait = true, decimal? rrOverride = null,
-    decimal? rrSensex = null)
+    decimal? rrSensex = null, Func<string, bool>? matchSym = null)
 {
-    // Cache-first ATM CE/PE backtest (same as live bot symbol style YYMMM for monthly weeklies in July cache).
+    // ATM CE/PE via options-chain (weekly YYMDD + monthly YYMMM). Fallback: YYMMM guess.
+    matchSym ??= _ => true;
     var legs = new[]
     {
         new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 3m, 50m, 0),
         new Leg("sensex", "BSE:SENSEX-INDEX", "BSE:SENSEX", 3m, 100m, 1),
         new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 3m, 100m, 2),
-    };
+    }.Where(l => matchSym(l.Code == "nifty" ? "Nifty" : l.Code == "bank" ? "BankNifty" : "Sensex")).ToArray();
+    if (legs.Length == 0)
+        Fail("--symbols matched zero option legs. Use Nifty, BankNifty, and/or Sensex.");
 
     var raw = new List<OptRow>();
     int days = 0, hits = 0, misses = 0;
@@ -643,15 +667,22 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             var idx = await GetCandlesAsync(http, clientId, access, leg.Index, "3", day, cacheDirs);
             if (idx.Count == 0) continue;
 
+            Dictionary<(long strike, string cepe), string> chain;
+            try
+            {
+                (_, chain) = await LoadNearestChainAsync(http, clientId, access, leg.Index);
+                await Task.Delay(200);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  {leg.Code} chain fail {day:yyyy-MM-dd}: {ex.Message} — YYMMM fallback");
+                chain = new Dictionary<(long strike, string cepe), string>();
+            }
+
             decimal useRr = rrOverride ?? leg.RR;
             if (rrSensex != null && leg.Code == "sensex")
                 useRr = rrSensex.Value;
             var config = RecommendedLiveConfig.MakeConfig(useRr);
-            if ((rrOverride != null || (rrSensex != null && leg.Code == "sensex")) && useRr < 2m)
-            {
-                config.TrailActivateRR = 2m;
-                config.TrailTargetRR = 2.5m;
-            }
 
             foreach (var rs in refs)
             {
@@ -662,17 +693,25 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
 
                 foreach (var cepe in new[] { "CE", "PE" })
                 {
-                    // Primary: classic YYMMM (matches July datacache). Fallback: try ±1 strike.
-                    var tryStrikes = new[] { strike, strike - (long)leg.Step, strike + (long)leg.Step };
+                    string? sym = ResolveOptionSymbol(chain, strike, cepe, leg.Step);
                     List<Candle>? opt = null;
-                    string? sym = null;
-                    foreach (var st in tryStrikes)
+                    if (sym != null)
                     {
-                        string candidate = $"{leg.OptRoot}{yy}{mmm}{st}{cepe}";
-                        var candles = await GetCandlesAsync(http, clientId, access, candidate, "3", day, cacheDirs);
-                        if (candles.Count == 0) { misses++; continue; }
-                        opt = candles; sym = candidate; hits++;
-                        break;
+                        opt = await GetCandlesAsync(http, clientId, access, sym, "3", day, cacheDirs);
+                        if (opt.Count == 0) { misses++; sym = null; opt = null; }
+                        else hits++;
+                    }
+                    if (opt == null)
+                    {
+                        var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var candidate in GuessOptionSymbols(leg.OptRoot, day, strike, cepe, leg.Step))
+                        {
+                            if (!tried.Add(candidate)) continue;
+                            var candles = await GetCandlesAsync(http, clientId, access, candidate, "3", day, cacheDirs);
+                            if (candles.Count == 0) { misses++; continue; }
+                            opt = candles; sym = candidate; hits++;
+                            break;
+                        }
                     }
                     if (opt == null || sym == null) continue;
                     dayHit = true;
@@ -684,6 +723,7 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             }
         }
         if (dayHit) days++;
+        Console.WriteLine($"  ... {day:yyyy-MM-dd} signals so far={raw.Count} hits≈{hits} misses≈{misses}");
     }
 
     Console.WriteLine($"Days with any option hit: {days}  cache/api hits≈{hits} misses≈{misses}  rawSignals={raw.Count}");
@@ -724,6 +764,16 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
     Summarize(survivors.Select(s => s.Sig));
     Console.WriteLine("\nTAKEN summary:");
     Summarize(taken.Select(t => t.Sig));
+
+    Console.WriteLine("\n--- BY UNDERLYING ---");
+    foreach (var g in taken.GroupBy(t =>
+                 t.Sym.Contains("BANK", StringComparison.OrdinalIgnoreCase) ? "BankNifty"
+                 : t.Sym.Contains("SENSEX", StringComparison.OrdinalIgnoreCase) ? "Sensex"
+                 : "Nifty"))
+    {
+        Console.Write($"{g.Key,-12} ");
+        Summarize(g.Select(x => x.Sig));
+    }
 
     // Premium / SL-points stats for user's 100/10/20 model
     if (taken.Count > 0)
