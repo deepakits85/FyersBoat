@@ -7,7 +7,7 @@ First-4-candle + EMA9/15 (volume OFF). c3 O/H/L/C must all clear EMA
 **SL / Target**
 - Break candle = c1 (jis ka High/Low break ho)
 - BUY: Entry = c1.High, SL = c1.Low | SELL: Entry = c1.Low, SL = c1.High
-- Target = 1:6
+- Target = 1:1.6
 
 Caches Fyers history under
 `FyersLoginWeb/bin/Release/net9.0/datacache/multitf/`.

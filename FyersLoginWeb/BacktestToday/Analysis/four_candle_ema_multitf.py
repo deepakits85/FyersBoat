@@ -2,7 +2,7 @@
 """
 First-4-candle + EMA9/15 signal checker (VOLUME OFF).
 c3 Open/High/Low/Close must all be clear of EMA9 and EMA15 (no wick/body touch).
-SL = break candle (c1) opposite extreme; Target = 1:6.
+SL = break candle (c1) opposite extreme; Target = 1:1.6.
 Caches Fyers history locally; runs 3/5/10/15/20/30 min TFs.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ SYMS = [
     ("Bank", "NSE:NIFTYBANK-INDEX"),
     ("Sensex", "BSE:SENSEX-INDEX"),
 ]
-RR = 6.0
+RR = 1.6
 
 
 def load_auth():
@@ -99,7 +99,7 @@ def clear_below(c, ema_v):
 
 
 def build_trade(side: str, c1, c3):
-    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:6."""
+    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:1.6."""
     buy = side == "BUY"
     entry = c1["h"] if buy else c1["l"]
     sl = c1["l"] if buy else c1["h"]
@@ -202,7 +202,7 @@ def main():
 
     print(f"Cache dir: {CACHE}")
     print("Rule: first-4 (ignore c0) + EMA9/15 | VOL OFF | c3 OHLC clear EMA")
-    print("SL = break candle (c1) opposite extreme | Target 1:6")
+    print("SL = break candle (c1) opposite extreme | Target 1:1.6")
     print(f"TFs: {', '.join(TFS)} min | Range lookback {d0}→{d1}\n")
 
     summary = []  # (name, tf, day, side, outcome)
@@ -245,7 +245,7 @@ def main():
                 print(
                     f"    {day} → {trade['side']:4} @c3={t3} "
                     f"Entry={trade['entry']:.2f} SL={trade['sl']:.2f} "
-                    f"T={trade['target']:.2f} (1:{int(RR)}) risk={trade['risk']:.2f} "
+                    f"T={trade['target']:.2f} (1:{RR}) risk={trade['risk']:.2f} "
                     f"→ {outcome}"
                 )
 
@@ -273,7 +273,7 @@ def main():
     net_r = tgt * RR + sl * (-1.0)
     print(f"\nTotals: BUY={buys}  SELL={sells}")
     print(f"Outcomes (same-day after signal): TARGET={tgt}  SL={sl}  OPEN={opn}")
-    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{int(RR)}")
+    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{RR}")
 
 
 if __name__ == "__main__":

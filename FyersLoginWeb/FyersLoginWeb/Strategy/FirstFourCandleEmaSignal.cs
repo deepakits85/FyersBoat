@@ -7,11 +7,11 @@ namespace FyersLoginWeb.Strategy
     /// First-4-candle pattern (ignore candle[0]) + EMA9/EMA15.
     /// Volume OFF. c3 O/H/L/C EMA touch nahi.
     /// SL = jis candle ka H/L break ho (c1) uska opposite extreme.
-    /// Target = 1:6 (Entry ± 6 * risk).
+    /// Target = 1:1.6 (Entry ± 1.6 * risk).
     /// </summary>
     public static class FirstFourCandleEmaSignal
     {
-        public const decimal RiskRewardRatio = 6m;
+        public const decimal RiskRewardRatio = 1.6m;
 
         /// <summary>
         /// candles[0]=ignored, [1]=c1 (break level), [2]=c2, [3]=c3.
