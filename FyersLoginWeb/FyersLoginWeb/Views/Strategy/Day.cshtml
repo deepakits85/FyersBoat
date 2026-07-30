@@ -1,0 +1,213 @@
+@model FyersLoginWeb.Models.StrategyDayViewModel
+@using FyersLoginWeb.Strategy
+@{
+    ViewData["Title"] = "Strategy — Day Backtest";
+    // Option chart par sirf Long (BUY) steps; index par Long + Short dono
+    var stepTables = Model.IsOption
+        ? new (string title, List<FyersLoginWeb.Models.StrategyStepRow> rows)[]
+          {
+              ("Long (BUY) steps", Model.Steps)
+          }
+        : new (string title, List<FyersLoginWeb.Models.StrategyStepRow> rows)[]
+          {
+              ("Long (BUY) steps", Model.Steps),
+              ("Short (SELL) steps", Model.ShortSteps)
+          };
+}
+
+@functions {
+    string OutcomeCls(TradeOutcome o) => o == TradeOutcome.TargetHit ? "table-success"
+        : o == TradeOutcome.StopLossHit ? "table-danger"
+        : o == TradeOutcome.TrailStopHit ? "table-info"
+        : o == TradeOutcome.TimeExit ? "table-primary" : "table-warning";
+
+    static string OutcomeBadge(TradeOutcome o) => o switch
+    {
+        TradeOutcome.TargetHit => "<span class='badge bg-success'>TARGET HIT ✓</span>",
+        TradeOutcome.StopLossHit => "<span class='badge bg-danger'>SL HIT ✗</span>",
+        TradeOutcome.TrailStopHit => "<span class='badge bg-info text-dark'>TRAIL SL (2R→BE+)</span>",
+        TradeOutcome.TimeExit => "<span class='badge bg-primary'>SQUARE-OFF 2:45 ⏱</span>",
+        _ => "<span class='badge bg-secondary'>OPEN (EOD)</span>"
+    };
+}
+
+<h2>Strategy Run — Real Data (BUY + SELL)</h2>
+
+<form method="get" asp-controller="Strategy" asp-action="Day" class="row g-2 mb-3" style="max-width:1100px;">
+    <div class="col-auto">
+        <label class="form-label mb-0">Symbol</label>
+        <input name="symbol" value="@Model.Symbol" class="form-control" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Retr %</label>
+        <input name="retracement" value="@(Model.RetracementPercent * 100)" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Entry buf</label>
+        <input name="entryBuffer" value="@Model.EntryBufferPoints" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">SL buf</label>
+        <input name="slBuffer" value="@Model.StopLossBufferPoints" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">R:R</label>
+        <input name="rr" value="@Model.RiskRewardRatio" class="form-control" style="width:60px;" />
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-primary">Run</button>
+    </div>
+</form>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+    @if (Model.Error.Contains("login"))
+    {
+        <a class="btn btn-warning" asp-controller="Auth" asp-action="Index">Go to Login</a>
+    }
+}
+else
+{
+    <div class="alert alert-info" style="max-width:1100px;">
+        <b>@Model.Symbol</b> &nbsp;|&nbsp; Day: <b>@Model.TradingDay.ToString("dd-MMM-yyyy (ddd)")</b>
+        &nbsp;|&nbsp; Retr: <b>@(Model.RetracementPercent * 100)%</b>
+        &nbsp;|&nbsp; Entry/SL buf: <b>@Model.EntryBufferPoints / @Model.StopLossBufferPoints</b>
+        &nbsp;|&nbsp; R:R <b>1:@Model.RiskRewardRatio</b>
+        <br />
+        <span class="text-success">BUY: <b>@Model.BuySignals.Count</b> (Tgt @Model.BuyTargetHits / Trail @Model.BuyTrailStops / SL @Model.BuyStopLossHits)</span>
+        @if (!Model.IsOption)
+        {
+            <text>&nbsp;|&nbsp;
+            <span class="text-danger">SELL: <b>@Model.SellSignals.Count</b> (Tgt @Model.SellTargetHits / Trail @Model.SellTrailStops / SL @Model.SellStopLossHits)</span></text>
+        }
+        @if (Model.IsOption)
+        {
+            <div class="mt-1 small text-primary">
+                ℹ️ Yeh ek <b>option chart</b> hai — is par sirf <b>BUY (long premium)</b> side liya jaata hai.
+                Option ko SHORT/sell nahi karte (BUY signal → CE kharido, SELL signal → PE kharido — dono baar buy).
+            </div>
+        }
+    </div>
+
+    @* ---- BUY signals ---- *@
+    <div class="card mb-3" style="max-width:1200px;">
+        <div class="card-header bg-success text-white">BUY (Long) Signals</div>
+        <div class="card-body p-0" style="overflow-x:auto;">
+            @if (Model.BuySignals.Count == 0)
+            {
+                <div class="p-2 text-muted">Koi BUY signal nahi.</div>
+            }
+            else
+            {
+                <table class="table table-sm mb-0" style="min-width:1000px;">
+                    <thead><tr>
+                        <th>Entry Time</th><th>Ref High</th><th>Entry</th><th>SL</th>
+                        <th>Target</th><th>Risk</th><th>Outcome</th><th>Hit Time</th>
+                    </tr></thead>
+                    <tbody>
+                        @foreach (var s in Model.BuySignals)
+                        {
+                            <tr class="@OutcomeCls(s.Outcome)">
+                                <td>@s.EntryTime.ToString("HH:mm")</td>
+                                <td>@s.Reference.High</td>
+                                <td><b>@s.EntryPrice</b></td>
+                                <td>@s.StopLoss</td>
+                                <td>@s.Target</td>
+                                <td>@Math.Round(s.Risk, 2)</td>
+                                <td>@Html.Raw(OutcomeBadge(s.Outcome))</td>
+                                <td>@(s.OutcomeTime?.ToString("HH:mm") ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    @* ---- SELL signals (sirf index par; option chart pe short nahi lete) ---- *@
+    @if (!Model.IsOption)
+    {
+    <div class="card mb-3" style="max-width:1200px;">
+        <div class="card-header bg-danger text-white">SELL (Short) Signals</div>
+        <div class="card-body p-0" style="overflow-x:auto;">
+            @if (Model.SellSignals.Count == 0)
+            {
+                <div class="p-2 text-muted">Koi SELL signal nahi.</div>
+            }
+            else
+            {
+                <table class="table table-sm mb-0" style="min-width:1000px;">
+                    <thead><tr>
+                        <th>Entry Time</th><th>Ref Low</th><th>Entry</th><th>SL</th>
+                        <th>Target</th><th>Risk</th><th>Outcome</th><th>Hit Time</th>
+                    </tr></thead>
+                    <tbody>
+                        @foreach (var s in Model.SellSignals)
+                        {
+                            <tr class="@OutcomeCls(s.Outcome)">
+                                <td>@s.EntryTime.ToString("HH:mm")</td>
+                                <td>@s.Reference.Low</td>
+                                <td><b>@s.EntryPrice</b></td>
+                                <td>@s.StopLoss</td>
+                                <td>@s.Target</td>
+                                <td>@Math.Round(s.Risk, 2)</td>
+                                <td>@Html.Raw(OutcomeBadge(s.Outcome))</td>
+                                <td>@(s.OutcomeTime?.ToString("HH:mm") ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+    }
+
+    <p class="text-muted" style="font-size:0.85rem;">
+        @if (Model.IsOption)
+        {
+            <text>Step-by-step table — option ke apne 3-min chart par Long (BUY) machine.</text>
+        }
+        else
+        {
+            <text>Neeche step-by-step tables — Long (BUY) aur Short (SELL) machine alag-alag.</text>
+        }
+        🟨 1st breach &nbsp; 🟦 retracement &nbsp; 🟧 2nd breach (wait entry) &nbsp; 🟩 entry.
+    </p>
+
+    @foreach (var (title, rows) in stepTables)
+    {
+        <h6 class="mt-3">@title</h6>
+        <div style="overflow-x:auto;">
+            <table class="table table-sm table-bordered" style="min-width:1000px;">
+                <thead class="table-light"><tr>
+                    <th>Time</th><th>Ref (30m)</th><th>Ref High</th><th>Ref Low</th><th>Retr Level</th>
+                    <th>O</th><th>H</th><th>L</th><th>C</th><th>State</th><th>Event</th><th>Note</th>
+                </tr></thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        string style = row.IsBuy ? "background:#a3e4b8;"
+                                   : row.IsFirstBreakout ? "background:#fff3cd;"
+                                   : row.IsRetracement ? "background:#cfe2ff;"
+                                   : row.IsSecondBreakout ? "background:#ffe0b2;" : "";
+                        <tr style="@style">
+                            <td>@row.Time</td>
+                            <td>@row.RefWindow</td>
+                            <td>@row.RefHigh</td>
+                            <td>@row.RefLow</td>
+                            <td>@row.RetrLevel</td>
+                            <td>@row.Open</td>
+                            <td>@row.High</td>
+                            <td>@row.Low</td>
+                            <td>@row.Close</td>
+                            <td>@row.State</td>
+                            <td>@(row.Confirmed ?? "")</td>
+                            <td style="font-size:0.82rem;">@row.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}

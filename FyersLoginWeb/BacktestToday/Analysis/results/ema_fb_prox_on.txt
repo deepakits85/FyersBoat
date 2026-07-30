@@ -1,0 +1,115 @@
+Cache dir: /workspace/FyersLoginWeb/FyersLoginWeb/bin/Release/net9.0/datacache/multitf
+Rule: EMA failed-break | first candle ignore | EMA9+15 clear
+BUY: 3 reds downtrend → GREEN breaks red High → next RED (close > green Low)
+SELL: 3 greens uptrend → RED breaks green Low → next GREEN (close < red High)
+EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break
+First candle fully ignored (not used as broken reference)
+Day proximity: ON 10.0% (pre-entry / through break)
+SL lookback=2 (+50% cap) | Target 1:3.0
+TFs: 10, 15, 20, 30 | Analyze 2026-05-01→2026-07-30
+
+===== Nifty =====
+  --- 10m --- days=62
+    2026-06-15 → BUY  conf=next  @12:45 Entry=23903.40 SL=23892.35 T=23936.55 risk=11.05 → SL @13:35
+    2026-07-17 → SELL conf=next  @10:05 Entry=24239.85 SL=24246.95 T=24218.55 risk=7.10 → SL @10:15
+    2026-07-23 → BUY  conf=next  @13:25 Entry=23829.75 SL=23819.47 T=23860.58 risk=10.28 → TARGET @13:35
+  --- 15m --- days=62
+    2026-06-03 → BUY  conf=next  @11:30 Entry=23214.20 SL=23200.62 T=23254.93 risk=13.58 → SL @11:45
+    2026-07-17 → SELL conf=next  @12:15 Entry=24277.65 SL=24283.20 T=24261.00 risk=5.55 → SL @12:30
+    2026-07-24 → SELL conf=next  @13:15 Entry=23790.65 SL=23808.70 T=23736.50 risk=18.05 → TARGET @13:30
+    2026-07-29 → SELL conf=next  @11:00 Entry=24233.70 SL=24238.45 T=24219.45 risk=4.75 → SL @11:15
+    2026-07-29 → SELL conf=next  @14:45 Entry=24272.50 SL=24279.00 T=24253.00 risk=6.50 → TARGET @15:00
+  --- 20m --- days=62
+    2026-07-22 → BUY  conf=next  @12:55 Entry=23978.85 SL=23961.40 T=24031.20 risk=17.45 → OPEN
+    2026-07-29 → SELL conf=next  @10:55 Entry=24233.70 SL=24238.45 T=24219.45 risk=4.75 → SL @11:15
+  --- 30m --- days=62
+===== Bank =====
+  --- 10m --- days=62
+    2026-05-29 → BUY  conf=next  @14:05 Entry=54512.05 SL=54480.73 T=54606.02 risk=31.32 → SL @14:15
+    2026-07-23 → BUY  conf=next  @12:05 Entry=56621.00 SL=56595.95 T=56696.15 risk=25.05 → SL @12:15
+  --- 15m --- days=62
+    2026-06-05 → BUY  conf=next  @14:00 Entry=54210.05 SL=54140.60 T=54418.40 risk=69.45 → TARGET @14:30
+    2026-06-09 → SELL conf=next  @14:00 Entry=55080.95 SL=55114.68 T=54979.77 risk=33.73 → SL @14:30
+    2026-06-24 → SELL conf=next  @12:15 Entry=58081.45 SL=58128.65 T=57939.85 risk=47.20 → SL @13:15
+    2026-07-10 → SELL conf=next  @10:45 Entry=57946.25 SL=57981.55 T=57840.35 risk=35.30 → SL @11:00
+    2026-07-29 → SELL conf=next  @14:45 Entry=57281.20 SL=57315.95 T=57176.95 risk=34.75 → TARGET @15:15
+  --- 20m --- days=62
+    2026-05-26 → BUY  conf=next  @13:35 Entry=55068.75 SL=55018.20 T=55220.40 risk=50.55 → SL @13:55
+    2026-06-24 → SELL conf=next  @14:15 Entry=58177.65 SL=58233.65 T=58009.65 risk=56.00 → SL @14:35
+    2026-07-22 → BUY  conf=next  @12:55 Entry=57052.10 SL=56988.43 T=57243.12 risk=63.67 → OPEN
+  --- 30m --- days=62
+    2026-06-03 → BUY  conf=next  @11:45 Entry=53093.45 SL=53070.05 T=53163.65 risk=23.40 → SL @12:15
+===== Sensex =====
+  --- 10m --- days=62
+    2026-05-25 → SELL conf=next  @11:05 Entry=76358.64 SL=76386.71 T=76274.43 risk=28.07 → TARGET @12:15
+    2026-06-22 → SELL conf=next  @10:35 Entry=77257.62 SL=77275.90 T=77202.78 risk=18.28 → SL @10:45
+    2026-07-17 → SELL conf=next  @10:05 Entry=77812.21 SL=77828.89 T=77762.17 risk=16.68 → SL @10:15
+    2026-07-23 → BUY  conf=next  @13:25 Entry=76240.68 SL=76207.60 T=76339.93 risk=33.08 → TARGET @13:35
+  --- 15m --- days=62
+    2026-05-05 → BUY  conf=next  @11:15 Entry=76675.63 SL=76628.79 T=76816.15 risk=46.84 → SL @11:30
+    2026-05-21 → BUY  conf=next  @13:15 Entry=75090.59 SL=74996.78 T=75372.02 risk=93.81 → OPEN
+    2026-06-03 → BUY  conf=next  @10:30 Entry=73759.27 SL=73738.13 T=73822.69 risk=21.14 → SL @10:45
+    2026-06-03 → BUY  conf=next  @11:30 Entry=73709.87 SL=73662.18 T=73852.94 risk=47.69 → SL @11:45
+    2026-07-24 → SELL conf=next  @13:15 Entry=76129.05 SL=76163.83 T=76024.71 risk=34.78 → TARGET @13:30
+    2026-07-29 → SELL conf=next  @11:00 Entry=77613.23 SL=77641.27 T=77529.11 risk=28.04 → SL @11:15
+    2026-07-29 → SELL conf=next  @14:45 Entry=77736.15 SL=77765.32 T=77648.64 risk=29.17 → TARGET @15:15
+  --- 20m --- days=62
+    2026-05-12 → BUY  conf=next  @13:15 Entry=75023.02 SL=74943.42 T=75261.82 risk=79.60 → SL @13:35
+    2026-07-22 → BUY  conf=next  @12:55 Entry=76696.18 SL=76641.69 T=76859.65 risk=54.49 → OPEN
+    2026-07-29 → SELL conf=next  @10:55 Entry=77613.23 SL=77641.66 T=77527.94 risk=28.43 → SL @11:15
+  --- 30m --- days=62
+
+========== BY TIMEFRAME ==========
+TF    Sig   BUY   SELL  TGT   SL    OPEN  NetR     Win%  
+10m       9     5     4     3     6     0     +3.0  33.3%
+15m      17     6    11     6    10     1     +8.0  35.3%
+20m       8     5     3     0     5     3     -5.0   0.0%
+30m       1     1     0     0     1     0     -1.0   0.0%
+
+========== BY INDEX ==========
+Nifty    sig= 10 BUY=  4 SELL=  6 TGT=  3 SL=  6 OPEN=  1 NetR=+3.0
+Bank     sig= 11 BUY=  6 SELL=  5 TGT=  2 SL=  8 OPEN=  1 NetR=-2.0
+Sensex   sig= 14 BUY=  7 SELL=  7 TGT=  4 SL=  8 OPEN=  2 NetR=+4.0
+
+========== TOTALS RR=1:3.0 | dayProx=ON ==========
+Signals: BUY=17 SELL=18 total=35
+Outcomes: TARGET=9 SL=22 OPEN=4 Win%=25.7%
+Net R (OPEN=0): +5.0R
+
+========== DETAILED TRADES ==========
+#   Index   TF   Day        Side Conf  Brk   Ent        Entry         SL     Target     Risk Out    Exit      R
+1   Nifty   10m  2026-06-15 BUY  next  12:35 12:45   23903.40   23892.35   23936.55    11.05 SL     13:35  -1.0
+2   Nifty   10m  2026-07-17 SELL next  09:55 10:05   24239.85   24246.95   24218.55     7.10 SL     10:15  -1.0
+3   Nifty   10m  2026-07-23 BUY  next  13:15 13:25   23829.75   23819.47   23860.58    10.28 TARGET 13:35   3.0
+4   Nifty   15m  2026-06-03 BUY  next  11:15 11:30   23214.20   23200.62   23254.93    13.58 SL     11:45  -1.0
+5   Nifty   15m  2026-07-17 SELL next  12:00 12:15   24277.65   24283.20   24261.00     5.55 SL     12:30  -1.0
+6   Nifty   15m  2026-07-24 SELL next  13:00 13:15   23790.65   23808.70   23736.50    18.05 TARGET 13:30   3.0
+7   Nifty   15m  2026-07-29 SELL next  10:45 11:00   24233.70   24238.45   24219.45     4.75 SL     11:15  -1.0
+8   Nifty   15m  2026-07-29 SELL next  14:30 14:45   24272.50   24279.00   24253.00     6.50 TARGET 15:00   3.0
+9   Nifty   20m  2026-07-22 BUY  next  12:35 12:55   23978.85   23961.40   24031.20    17.45 OPEN   15:15   0.0
+10  Nifty   20m  2026-07-29 SELL next  10:35 10:55   24233.70   24238.45   24219.45     4.75 SL     11:15  -1.0
+11  Bank    10m  2026-05-29 BUY  next  13:55 14:05   54512.05   54480.73   54606.02    31.32 SL     14:15  -1.0
+12  Bank    10m  2026-07-23 BUY  next  11:55 12:05   56621.00   56595.95   56696.15    25.05 SL     12:15  -1.0
+13  Bank    15m  2026-06-05 BUY  next  13:45 14:00   54210.05   54140.60   54418.40    69.45 TARGET 14:30   3.0
+14  Bank    15m  2026-06-09 SELL next  13:45 14:00   55080.95   55114.68   54979.77    33.73 SL     14:30  -1.0
+15  Bank    15m  2026-06-24 SELL next  12:00 12:15   58081.45   58128.65   57939.85    47.20 SL     13:15  -1.0
+16  Bank    15m  2026-07-10 SELL next  10:30 10:45   57946.25   57981.55   57840.35    35.30 SL     11:00  -1.0
+17  Bank    15m  2026-07-29 SELL next  14:30 14:45   57281.20   57315.95   57176.95    34.75 TARGET 15:15   3.0
+18  Bank    20m  2026-05-26 BUY  next  13:15 13:35   55068.75   55018.20   55220.40    50.55 SL     13:55  -1.0
+19  Bank    20m  2026-06-24 SELL next  13:55 14:15   58177.65   58233.65   58009.65    56.00 SL     14:35  -1.0
+20  Bank    20m  2026-07-22 BUY  next  12:35 12:55   57052.10   56988.43   57243.12    63.67 OPEN   15:15   0.0
+21  Bank    30m  2026-06-03 BUY  next  11:15 11:45   53093.45   53070.05   53163.65    23.40 SL     12:15  -1.0
+22  Sensex  10m  2026-05-25 SELL next  10:55 11:05   76358.64   76386.71   76274.43    28.07 TARGET 12:15   3.0
+23  Sensex  10m  2026-06-22 SELL next  10:25 10:35   77257.62   77275.90   77202.78    18.28 SL     10:45  -1.0
+24  Sensex  10m  2026-07-17 SELL next  09:55 10:05   77812.21   77828.89   77762.17    16.68 SL     10:15  -1.0
+25  Sensex  10m  2026-07-23 BUY  next  13:15 13:25   76240.68   76207.60   76339.93    33.08 TARGET 13:35   3.0
+26  Sensex  15m  2026-05-05 BUY  next  11:00 11:15   76675.63   76628.79   76816.15    46.84 SL     11:30  -1.0
+27  Sensex  15m  2026-05-21 BUY  next  13:00 13:15   75090.59   74996.78   75372.02    93.81 OPEN   15:15   0.0
+28  Sensex  15m  2026-06-03 BUY  next  10:15 10:30   73759.27   73738.13   73822.69    21.14 SL     10:45  -1.0
+29  Sensex  15m  2026-06-03 BUY  next  11:15 11:30   73709.87   73662.18   73852.94    47.69 SL     11:45  -1.0
+30  Sensex  15m  2026-07-24 SELL next  13:00 13:15   76129.05   76163.83   76024.71    34.78 TARGET 13:30   3.0
+31  Sensex  15m  2026-07-29 SELL next  10:45 11:00   77613.23   77641.27   77529.11    28.04 SL     11:15  -1.0
+32  Sensex  15m  2026-07-29 SELL next  14:30 14:45   77736.15   77765.32   77648.64    29.17 TARGET 15:15   3.0
+33  Sensex  20m  2026-05-12 BUY  next  12:55 13:15   75023.02   74943.42   75261.82    79.60 SL     13:35  -1.0
+34  Sensex  20m  2026-07-22 BUY  next  12:35 12:55   76696.18   76641.69   76859.65    54.49 OPEN   15:15   0.0
+35  Sensex  20m  2026-07-29 SELL next  10:35 10:55   77613.23   77641.66   77527.94    28.43 SL     11:15  -1.0

@@ -1,0 +1,4 @@
+**/token.json
+
+# multi-TF history cache
+**/datacache/multitf/*.json

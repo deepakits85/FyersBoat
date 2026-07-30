@@ -1,0 +1,109 @@
+@model FyersLoginWeb.Models.StrategyMonthViewModel
+@{
+    ViewData["Title"] = "Strategy — Month Summary";
+}
+
+<h2>Strategy — Monthly Summary</h2>
+
+<form method="get" asp-controller="Strategy" asp-action="Month" class="row g-2 mb-3" style="max-width:1200px;">
+    <div class="col-auto">
+        <label class="form-label mb-0">Symbol</label>
+        <input name="symbol" value="@Model.Symbol" class="form-control" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Year</label>
+        <input name="year" value="@Model.Year" class="form-control" style="width:90px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Month</label>
+        <input name="month" value="@Model.Month" class="form-control" style="width:70px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Retr %</label>
+        <input name="retracement" value="@(Model.RetracementPercent * 100)" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">Entry buf</label>
+        <input name="entryBuffer" value="@Model.EntryBufferPoints" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">SL buf</label>
+        <input name="slBuffer" value="@Model.StopLossBufferPoints" class="form-control" style="width:80px;" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0">R:R</label>
+        <input name="rr" value="@Model.RiskRewardRatio" class="form-control" style="width:60px;" />
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-primary">Run</button>
+    </div>
+</form>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+    @if (Model.Error.Contains("login"))
+    {
+        <a class="btn btn-warning" asp-controller="Auth" asp-action="Index">Go to Login</a>
+    }
+}
+
+@if (Model.Days.Count > 0)
+{
+    <div class="card mb-3" style="max-width:760px;">
+        <div class="card-header bg-dark text-white">
+            @Model.Symbol — @Model.MonthName @Model.Year &nbsp; (@Model.TradingDays trading days)
+        </div>
+        <div class="card-body p-0">
+            <table class="table mb-0 text-center align-middle">
+                <thead class="table-light">
+                    <tr><th></th><th>Total</th><th class="text-success">Target</th><th class="text-info">Trail SL</th><th class="text-danger">SL hit</th><th>Open</th></tr>
+                </thead>
+                <tbody>
+                    <tr class="table-success">
+                        <th class="text-start">BUY (Long)</th>
+                        <td><b>@Model.TotalBuy</b></td><td>@Model.BuyTargetHits</td>
+                        <td>@Model.BuyTrailStops</td><td>@Model.BuyStopLossHits</td><td>@Model.BuyOpen</td>
+                    </tr>
+                    <tr class="table-danger">
+                        <th class="text-start">SELL (Short)</th>
+                        <td><b>@Model.TotalSell</b></td><td>@Model.SellTargetHits</td>
+                        <td>@Model.SellTrailStops</td><td>@Model.SellStopLossHits</td><td>@Model.SellOpen</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="p-2 text-muted" style="font-size:0.85rem;">
+                Target = 1:@Model.RiskRewardRatio (trailing on ho to 2R ke baad 1:2.5).
+                Trail SL = 2R tak gaya phir entry+1 par nikla (chhota profit).
+            </div>
+        </div>
+    </div>
+
+    <h5>Day-wise breakdown</h5>
+    <table class="table table-sm table-bordered text-center" style="max-width:820px;">
+        <thead class="table-light">
+            <tr>
+                <th rowspan="2">Date</th><th rowspan="2">Day</th>
+                <th colspan="5" class="table-success">BUY</th>
+                <th colspan="5" class="table-danger">SELL</th>
+            </tr>
+            <tr>
+                <th>Cnt</th><th>Tgt</th><th>Trl</th><th>SL</th><th>Opn</th>
+                <th>Cnt</th><th>Tgt</th><th>Trl</th><th>SL</th><th>Opn</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var d in Model.Days)
+            {
+                <tr class="@(d.BuyCount + d.SellCount > 0 ? "" : "text-muted")">
+                    <td>@d.Date.ToString("dd-MMM")</td>
+                    <td>@d.Date.ToString("ddd")</td>
+                    <td><b>@d.BuyCount</b></td><td class="text-success">@d.BuyTargetHits</td>
+                    <td class="text-info">@d.BuyTrailStops</td><td class="text-danger">@d.BuyStopLossHits</td><td>@d.BuyOpen</td>
+                    <td><b>@d.SellCount</b></td><td class="text-success">@d.SellTargetHits</td>
+                    <td class="text-info">@d.SellTrailStops</td><td class="text-danger">@d.SellStopLossHits</td><td>@d.SellOpen</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
