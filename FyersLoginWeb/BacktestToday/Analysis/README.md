@@ -21,7 +21,9 @@ python3 BacktestToday/Analysis/four_candle_ema_multitf.py \
 python3 BacktestToday/Analysis/four_candle_ema_multitf.py \
   --rr=3 --tfs=10,15,20,30 --fetch-from=2026-04-20 --analyze-from=2026-05-01 --to=2026-07-30 --quiet
 
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force  # re-fetch
+# Invert (pattern BUY → trade SELL, SELL → BUY)
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py \
+  --invert --rr=2 --tfs=10,15,20,30 --fetch-from=2026-04-20 --analyze-from=2026-05-01 --to=2026-07-30 --quiet
 ```
 
 TFs: 3, 5, 10, 15, 20, 30 min — Nifty / Bank / Sensex.
