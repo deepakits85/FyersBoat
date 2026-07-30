@@ -5,18 +5,22 @@ namespace FyersLoginWeb.Strategy
 {
     /// <summary>
     /// First-4-candle pattern (ignore candle[0]) + EMA9/EMA15.
-    /// Volume filter OFF. c3 Open/High/Low/Close — wick ya body — EMA touch nahi.
+    /// Volume OFF. c3 O/H/L/C EMA touch nahi.
+    /// SL = jis candle ka H/L break ho (c1) uska opposite extreme.
+    /// Target = 1:6 (Entry ± 6 * risk).
     /// </summary>
     public static class FirstFourCandleEmaSignal
     {
+        public const decimal RiskRewardRatio = 6m;
+
         /// <summary>
-        /// candles[0]=ignored, [1]=c1, [2]=c2, [3]=c3. Each candle must have EMA9/EMA15 set.
-        /// Returns "BUY", "SELL", or "".
+        /// candles[0]=ignored, [1]=c1 (break level), [2]=c2, [3]=c3.
+        /// Returns null if no signal.
         /// </summary>
-        public static string Apply(IReadOnlyList<EmaCandle> candles)
+        public static FourCandleEmaTrade? Apply(IReadOnlyList<EmaCandle> candles)
         {
             if (candles == null || candles.Count < 4)
-                return "";
+                return null;
 
             var c1 = candles[1];
             var c2 = candles[2];
@@ -27,40 +31,63 @@ namespace FyersLoginWeb.Strategy
             bool c3Red = c3.Close < c3.Open;
             bool c3Green = c3.Close > c3.Open;
 
-            // O/H/L/C sab EMA9 + EMA15 se clear — wick/body kuchh bhi touch nahi
             bool aboveEMA = ClearAbove(c3, c3.Ema9) && ClearAbove(c3, c3.Ema15);
             bool belowEMA = ClearBelow(c3, c3.Ema9) && ClearBelow(c3, c3.Ema15);
 
             bool breakout = c2.High > c1.High;
-            if (breakout && aboveEMA)
+            if (breakout && aboveEMA && !(c2Green && c3Green))
             {
-                // skip Green+Green
-                if (!(c2Green && c3Green))
-                {
-                    if (c2Red) return "BUY";
-                    if (c2Green && c3Red) return "BUY";
-                }
+                if (c2Red || (c2Green && c3Red))
+                    return BuildTrade("BUY", c1, c3);
             }
 
             bool breakdown = c2.Low < c1.Low;
-            if (breakdown && belowEMA)
+            if (breakdown && belowEMA && !(c2Red && c3Red))
             {
-                // skip Red+Red
-                if (!(c2Red && c3Red))
-                {
-                    if (c2Green) return "SELL";
-                    if (c2Red && c3Green) return "SELL";
-                }
+                if (c2Green || (c2Red && c3Green))
+                    return BuildTrade("SELL", c1, c3);
             }
 
-            return "";
+            return null;
         }
 
-        /// <summary>Poora candle EMA ke upar — Open, High, Low, Close sab &gt; ema.</summary>
+        /// <summary>Side string only — "BUY" / "SELL" / "".</summary>
+        public static string ApplySide(IReadOnlyList<EmaCandle> candles) =>
+            Apply(candles)?.Side ?? "";
+
+        /// <summary>
+        /// BUY: break c1.High → Entry=c1.High, SL=c1.Low (lowest of break candle).
+        /// SELL: break c1.Low → Entry=c1.Low, SL=c1.High (highest of break candle).
+        /// Target 1:6.
+        /// </summary>
+        static FourCandleEmaTrade BuildTrade(string side, EmaCandle breakCandle, EmaCandle signalCandle)
+        {
+            bool buy = side == "BUY";
+            decimal entry = buy ? breakCandle.High : breakCandle.Low;
+            decimal sl = buy ? breakCandle.Low : breakCandle.High;
+            decimal risk = Math.Abs(entry - sl);
+            if (risk <= 0m)
+                risk = 0.01m; // guard degenerate candle
+            decimal target = buy ? entry + risk * RiskRewardRatio : entry - risk * RiskRewardRatio;
+
+            return new FourCandleEmaTrade
+            {
+                Side = side,
+                EntryPrice = entry,
+                StopLoss = sl,
+                Target = target,
+                Risk = risk,
+                RiskRewardRatio = RiskRewardRatio,
+                BreakCandleHigh = breakCandle.High,
+                BreakCandleLow = breakCandle.Low,
+                SignalTime = signalCandle.StartTime,
+                BreakCandleTime = breakCandle.StartTime
+            };
+        }
+
         public static bool ClearAbove(EmaCandle c, decimal ema) =>
             c.Open > ema && c.High > ema && c.Low > ema && c.Close > ema;
 
-        /// <summary>Poora candle EMA ke neeche — Open, High, Low, Close sab &lt; ema.</summary>
         public static bool ClearBelow(EmaCandle c, decimal ema) =>
             c.Open < ema && c.High < ema && c.Low < ema && c.Close < ema;
 
@@ -78,6 +105,20 @@ namespace FyersLoginWeb.Strategy
                 series[i].Ema15 = e15;
             }
         }
+    }
+
+    public class FourCandleEmaTrade
+    {
+        public string Side { get; set; } = "";
+        public decimal EntryPrice { get; set; }
+        public decimal StopLoss { get; set; }
+        public decimal Target { get; set; }
+        public decimal Risk { get; set; }
+        public decimal RiskRewardRatio { get; set; }
+        public decimal BreakCandleHigh { get; set; }
+        public decimal BreakCandleLow { get; set; }
+        public DateTime SignalTime { get; set; }
+        public DateTime BreakCandleTime { get; set; }
     }
 
     public class EmaCandle

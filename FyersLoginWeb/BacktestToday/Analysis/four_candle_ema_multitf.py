@@ -2,6 +2,7 @@
 """
 First-4-candle + EMA9/15 signal checker (VOLUME OFF).
 c3 Open/High/Low/Close must all be clear of EMA9 and EMA15 (no wick/body touch).
+SL = break candle (c1) opposite extreme; Target = 1:6.
 Caches Fyers history locally; runs 3/5/10/15/20/30 min TFs.
 """
 from __future__ import annotations
@@ -12,6 +13,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -28,6 +30,7 @@ SYMS = [
     ("Bank", "NSE:NIFTYBANK-INDEX"),
     ("Sensex", "BSE:SENSEX-INDEX"),
 ]
+RR = 6.0
 
 
 def load_auth():
@@ -60,7 +63,6 @@ def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, for
     if body.get("s") != "ok":
         raise RuntimeError(f"{sym} {res}: {body}")
 
-    rows = []
     by = {}
     for row in body.get("candles") or []:
         ts = datetime.fromtimestamp(row[0], timezone.utc).replace(tzinfo=None) + IST
@@ -76,7 +78,7 @@ def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, for
     rows = [by[k] for k in sorted(by)]
     path.write_text(json.dumps(rows))
     print(f"  cached {path.name} ({len(rows)} bars)", flush=True)
-    time.sleep(0.35)  # be nice to API
+    time.sleep(0.35)
     return rows
 
 
@@ -88,43 +90,54 @@ def ema(vals, period):
     return out
 
 
-def clear_above(c, ema):
-    """O/H/L/C sab > ema — wick ya body touch nahi."""
-    return c["o"] > ema and c["h"] > ema and c["l"] > ema and c["c"] > ema
+def clear_above(c, ema_v):
+    return c["o"] > ema_v and c["h"] > ema_v and c["l"] > ema_v and c["c"] > ema_v
 
 
-def clear_below(c, ema):
-    """O/H/L/C sab < ema — wick ya body touch nahi."""
-    return c["o"] < ema and c["h"] < ema and c["l"] < ema and c["c"] < ema
+def clear_below(c, ema_v):
+    return c["o"] < ema_v and c["h"] < ema_v and c["l"] < ema_v and c["c"] < ema_v
+
+
+def build_trade(side: str, c1, c3):
+    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:6."""
+    buy = side == "BUY"
+    entry = c1["h"] if buy else c1["l"]
+    sl = c1["l"] if buy else c1["h"]
+    risk = abs(entry - sl) or 0.01
+    target = entry + risk * RR if buy else entry - risk * RR
+    return {
+        "side": side,
+        "entry": entry,
+        "sl": sl,
+        "target": target,
+        "risk": risk,
+        "rr": RR,
+        "break_h": c1["h"],
+        "break_l": c1["l"],
+        "signal_t": c3["t"],
+    }
 
 
 def apply_signal(c0, c1, c2, c3):
-    """Volume removed. Same color/EMA/breakout logic as user code."""
+    """Volume removed. Returns trade dict or None."""
     c2_red = c2["c"] < c2["o"]
     c2_green = c2["c"] > c2["o"]
     c3_red = c3["c"] < c3["o"]
     c3_green = c3["c"] > c3["o"]
 
-    # Poora c3: Open/High/Low/Close EMA9+EMA15 se clear
     above = clear_above(c3, c3["ema9"]) and clear_above(c3, c3["ema15"])
     below = clear_below(c3, c3["ema9"]) and clear_below(c3, c3["ema15"])
 
     breakout = c2["h"] > c1["h"]
-    if breakout and above:
-        if not (c2_green and c3_green):
-            if c2_red:
-                return "BUY"
-            if c2_green and c3_red:
-                return "BUY"
+    if breakout and above and not (c2_green and c3_green):
+        if c2_red or (c2_green and c3_red):
+            return build_trade("BUY", c1, c3)
 
     breakdown = c2["l"] < c1["l"]
-    if breakdown and below:
-        if not (c2_red and c3_red):
-            if c2_green:
-                return "SELL"
-            if c2_red and c3_green:
-                return "SELL"
-    return ""
+    if breakdown and below and not (c2_red and c3_red):
+        if c2_green or (c2_red and c3_green):
+            return build_trade("SELL", c1, c3)
+    return None
 
 
 def first_session_bars(rows, day: datetime.date, need=4):
@@ -141,6 +154,46 @@ def first_session_bars(rows, day: datetime.date, need=4):
     return bars
 
 
+def session_bars_after(rows, day: datetime.date, after_iso: str):
+    """Same-day bars strictly after signal candle start."""
+    out = []
+    for r in rows:
+        t = datetime.fromisoformat(r["t"])
+        if t.date() != day:
+            continue
+        if (t.hour, t.minute) > (15, 30):
+            continue
+        if r["t"] > after_iso:
+            out.append(r)
+    return out
+
+
+def resolve_outcome(trade, bars_after):
+    """Walk forward after signal. Same-bar SL+TP -> adverse (SL) first."""
+    buy = trade["side"] == "BUY"
+    sl, tgt = trade["sl"], trade["target"]
+    for b in bars_after:
+        if buy:
+            hit_sl = b["l"] <= sl
+            hit_tg = b["h"] >= tgt
+            if hit_sl and hit_tg:
+                return "SL"
+            if hit_sl:
+                return "SL"
+            if hit_tg:
+                return "TARGET"
+        else:
+            hit_sl = b["h"] >= sl
+            hit_tg = b["l"] <= tgt
+            if hit_sl and hit_tg:
+                return "SL"
+            if hit_sl:
+                return "SL"
+            if hit_tg:
+                return "TARGET"
+    return "OPEN"
+
+
 def main():
     force = "--force" in sys.argv
     d0, d1 = "2026-07-20", "2026-07-30"
@@ -148,10 +201,12 @@ def main():
     cid, access = load_auth()
 
     print(f"Cache dir: {CACHE}")
-    print("Rule: first-4 candle (ignore c0) + EMA9/15 | VOLUME OFF | c3 OHLC clear of EMA")
+    print("Rule: first-4 (ignore c0) + EMA9/15 | VOL OFF | c3 OHLC clear EMA")
+    print("SL = break candle (c1) opposite extreme | Target 1:6")
     print(f"TFs: {', '.join(TFS)} min | Range lookback {d0}→{d1}\n")
 
-    summary = []  # (name, tf, day, sig)
+    summary = []  # (name, tf, day, side, outcome)
+    trades_log = []
 
     for name, sym in SYMS:
         print(f"===== {name} =====")
@@ -172,40 +227,53 @@ def main():
                 bars = first_session_bars(rows, day, 4)
                 if len(bars) < 4:
                     print(f"    {day} NO DATA (bars={len(bars)})")
-                    summary.append((name, res, str(day), "NODATA"))
+                    summary.append((name, res, str(day), "NODATA", "-"))
                     continue
                 c0, c1, c2, c3 = bars[0], bars[1], bars[2], bars[3]
-                sig = apply_signal(c0, c1, c2, c3)
-                summary.append((name, res, str(day), sig or "NONE"))
+                trade = apply_signal(c0, c1, c2, c3)
+                if not trade:
+                    summary.append((name, res, str(day), "NONE", "-"))
+                    t3 = datetime.fromisoformat(c3["t"]).strftime("%H:%M")
+                    print(f"    {day} → NONE @c3={t3}")
+                    continue
+
+                after = session_bars_after(rows, day, c3["t"])
+                outcome = resolve_outcome(trade, after)
+                summary.append((name, res, str(day), trade["side"], outcome))
+                trades_log.append((name, res, day, trade, outcome))
                 t3 = datetime.fromisoformat(c3["t"]).strftime("%H:%M")
-                above = clear_above(c3, c3["ema9"]) and clear_above(c3, c3["ema15"])
-                below = clear_below(c3, c3["ema9"]) and clear_below(c3, c3["ema15"])
                 print(
-                    f"    {day} → {(sig or 'NONE'):4} @c3={t3} "
-                    f"c2={'G' if c2['c']>c2['o'] else 'R'} c3={'G' if c3['c']>c3['o'] else 'R'} "
-                    f"BO={c2['h']>c1['h']} BD={c2['l']<c1['l']} "
-                    f"above={above} below={below}"
+                    f"    {day} → {trade['side']:4} @c3={t3} "
+                    f"Entry={trade['entry']:.2f} SL={trade['sl']:.2f} "
+                    f"T={trade['target']:.2f} (1:{int(RR)}) risk={trade['risk']:.2f} "
+                    f"→ {outcome}"
                 )
 
     print("\n========== SIGNAL MATRIX (week) ==========")
-    print(f"{'Index':8} {'TF':5} {'27':6} {'28':6} {'29':6} {'30':6}")
-    from collections import defaultdict
-
+    print(f"{'Index':8} {'TF':5} {'27':10} {'28':10} {'29':10} {'30':10}")
     grid = defaultdict(dict)
-    for name, res, day, sig in summary:
-        grid[(name, res)][day[-2:]] = sig
+    for name, res, day, side, outcome in summary:
+        cell = side if side in ("NONE", "NODATA") else f"{side[0]}:{outcome[:3]}"
+        grid[(name, res)][day[-2:]] = cell
     for name, _ in SYMS:
         for res in TFS:
             row = grid.get((name, res), {})
             print(
                 f"{name:8} {res+'m':5} "
-                f"{row.get('27','-'):6} {row.get('28','-'):6} "
-                f"{row.get('29','-'):6} {row.get('30','-'):6}"
+                f"{row.get('27','-'):10} {row.get('28','-'):10} "
+                f"{row.get('29','-'):10} {row.get('30','-'):10}"
             )
 
-    buys = sum(1 for *_, s in summary if s == "BUY")
-    sells = sum(1 for *_, s in summary if s == "SELL")
-    print(f"\nTotals: BUY={buys}  SELL={sells}  (across 3 indices × 6 TFs × 4 days)")
+    buys = sum(1 for *_, s, _o in summary if s == "BUY")
+    sells = sum(1 for *_, s, _o in summary if s == "SELL")
+    tgt = sum(1 for *_, o in summary if o == "TARGET")
+    sl = sum(1 for *_, o in summary if o == "SL")
+    opn = sum(1 for *_, o in summary if o == "OPEN")
+    # R: target = +6, SL = -1, OPEN = 0 (mark-to-close ignored)
+    net_r = tgt * RR + sl * (-1.0)
+    print(f"\nTotals: BUY={buys}  SELL={sells}")
+    print(f"Outcomes (same-day after signal): TARGET={tgt}  SL={sl}  OPEN={opn}")
+    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{int(RR)}")
 
 
 if __name__ == "__main__":
