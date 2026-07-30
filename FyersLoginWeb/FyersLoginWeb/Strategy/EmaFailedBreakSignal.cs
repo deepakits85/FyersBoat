@@ -8,6 +8,7 @@ namespace FyersLoginWeb.Strategy
     ///
     /// BUY (below EMA9+EMA15, optional near day-low) — Bank 15m 5-Jun style only:
     ///   prior High broken by a GREEN candle → next candle must be RED → entry on that close.
+    ///   Break + entry candles both must be clear of EMA. No entry after 14:45.
     /// SELL (above both EMAs, optional near day-high):
     ///   prior Low broken by a RED candle → next candle must be GREEN → entry on that close.
     ///
@@ -19,6 +20,8 @@ namespace FyersLoginWeb.Strategy
         public const decimal DefaultRiskReward = 3m;
         public const decimal DefaultDayProximityPct = 0.10m; // 10% of day range
         public const int DefaultSlLookback = 2; // 1 or 2 prior candles
+        /// <summary>Last allowed entry candle start (IST). After this — no trade.</summary>
+        public static readonly TimeSpan EntryCutoff = new(14, 45, 0);
 
         public static EmaFailedBreakConfig DefaultConfig() => new();
 
@@ -89,14 +92,22 @@ namespace FyersLoginWeb.Strategy
             int entryIdx = breakIdx + 1;
             var entryBar = bars[entryIdx];
 
-            // Context on entry candle: clear of both EMAs + optional day extreme
+            // No entry after 14:45 IST
+            if (entryBar.StartTime.TimeOfDay > EntryCutoff)
+                return null;
+
+            // Break + entry both clear of EMA (wick/body touch nahi)
             if (isBuy)
             {
+                if (!ClearBelow(brk, brk.Ema9) || !ClearBelow(brk, brk.Ema15))
+                    return null;
                 if (!ClearBelow(entryBar, entryBar.Ema9) || !ClearBelow(entryBar, entryBar.Ema15))
                     return null;
             }
             else
             {
+                if (!ClearAbove(brk, brk.Ema9) || !ClearAbove(brk, brk.Ema15))
+                    return null;
                 if (!ClearAbove(entryBar, entryBar.Ema9) || !ClearAbove(entryBar, entryBar.Ema15))
                     return null;
             }

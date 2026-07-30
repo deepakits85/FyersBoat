@@ -4,10 +4,11 @@ EMA failed-break signal — multi-TF backtest.
 
 Rules (Bank 15m 5-Jun BUY style only):
   - First session candle ignored for signals
-  - BUY: clear below EMA9+EMA15, optional near day-low (10%);
+  - BUY: clear below EMA9+EMA15 (break + entry both), optional near day-low (10%);
          prior High broken by GREEN candle → next candle RED → entry on that close
-  - SELL: clear above both EMAs, optional near day-high;
+  - SELL: clear above both EMAs (break + entry), optional near day-high;
          prior Low broken by RED candle → next candle GREEN → entry on that close
+  - No entry after 14:45 IST
   - SL: min/max of prior 1–2 candles; if risk > 50% of candle just before broken → cap to 50%
   - Target 1:3
 """
@@ -197,10 +198,21 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
 
     entry_idx = break_idx + 1
     entry_bar = bars[entry_idx]
+
+    # No entry after 14:45
+    et = datetime.fromisoformat(entry_bar["t"])
+    if (et.hour, et.minute) > (14, 45):
+        return None
+
+    # Break + entry both clear of EMA (no wick/body touch)
     if is_buy:
+        if not (clear_below(brk, brk["ema9"]) and clear_below(brk, brk["ema15"])):
+            return None
         if not (clear_below(entry_bar, entry_bar["ema9"]) and clear_below(entry_bar, entry_bar["ema15"])):
             return None
     else:
+        if not (clear_above(brk, brk["ema9"]) and clear_above(brk, brk["ema15"])):
+            return None
         if not (clear_above(entry_bar, entry_bar["ema9"]) and clear_above(entry_bar, entry_bar["ema15"])):
             return None
 
@@ -319,6 +331,7 @@ def main():
     print(f"Cache dir: {CACHE}")
     print("Rule: EMA failed-break | first candle ignore | EMA9+15 clear")
     print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
+    print("EMA clear on break+entry candles | No entry after 14:45")
     print(f"Day proximity: {'ON '+str(prox_pct*100)+'%' if use_day_prox else 'OFF'}")
     print(f"SL lookback={sl_lookback} (+50% cap) | Target 1:{rr}")
     print(f"TFs: {', '.join(tfs)} | Analyze {analyze_from_s}→{analyze_to_s}\n")
