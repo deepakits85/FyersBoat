@@ -9,9 +9,9 @@ namespace FyersLoginWeb.Strategy
     ///   - Refs: 11:15 only
     ///   - Indices: Nifty + BankNifty + Sensex
     ///   - First BO: 3m CLOSE &gt; ref High (short: CLOSE &lt; ref Low)
-    ///   - Retracement: &gt; 20% of ref range
+    ///   - Retracement: &gt; 50% of ref range
     ///   - Second BO: entry on breakout touch (wick) — close wait nahi
-    ///   - SL: ref 50% | Target: 1:3
+    ///   - SL: ref Low (long) / ref High (short) | Target: 1:3
     ///   - KOI AUR RULE NAHI: no trail, prior, filters, gap, maxSL, freshness, 90m, square-off
     /// </summary>
     public static class RecommendedLiveConfig
@@ -58,9 +58,10 @@ namespace FyersLoginWeb.Strategy
                 SoftRetracementConfirm = false,
                 UsePriorLevelBreak = false,
                 UseSetupFreshness = false,
-                StopLossRetracementPercent = 0.50m, // SL @ 50%
+                // SL = ref Low (long) / ref High (short) — full range, not mid
+                StopLossRetracementPercent = 1.00m,
             };
-            cfg.SetRetracementFromPercentage(20m); // confirm >20%
+            cfg.SetRetracementFromPercentage(50m); // confirm >50%
             return cfg;
         }
 

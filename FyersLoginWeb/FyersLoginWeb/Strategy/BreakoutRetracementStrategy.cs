@@ -55,6 +55,7 @@ namespace FyersLoginWeb.Strategy
             _retracementLevel = IsLong
                 ? reference.High - reference.Range * _config.RetracementPercent
                 : reference.Low + reference.Range * _config.RetracementPercent;
+            // SL: StopLossRetracementPercent=1.0 => ref Low (long) / ref High (short)
             _stopLossLevel = IsLong
                 ? reference.High - reference.Range * _config.StopLossRetracementPercent
                 : reference.Low + reference.Range * _config.StopLossRetracementPercent;
