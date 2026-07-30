@@ -30,7 +30,14 @@ SYMS = [
     ("Bank", "NSE:NIFTYBANK-INDEX"),
     ("Sensex", "BSE:SENSEX-INDEX"),
 ]
-RR = 1.6
+RR = 1.6  # overridden by --rr=N
+
+
+def parse_rr(argv) -> float:
+    for a in argv:
+        if a.startswith("--rr="):
+            return float(a.split("=", 1)[1])
+    return RR
 
 
 def load_auth():
@@ -98,27 +105,34 @@ def clear_below(c, ema_v):
     return c["o"] < ema_v and c["h"] < ema_v and c["l"] < ema_v and c["c"] < ema_v
 
 
-def build_trade(side: str, c1, c3):
-    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:1.6."""
+def build_trade(side: str, c1, c3, rr: float):
+    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:rr."""
     buy = side == "BUY"
     entry = c1["h"] if buy else c1["l"]
     sl = c1["l"] if buy else c1["h"]
     risk = abs(entry - sl) or 0.01
-    target = entry + risk * RR if buy else entry - risk * RR
+    target = entry + risk * rr if buy else entry - risk * rr
     return {
         "side": side,
         "entry": entry,
         "sl": sl,
         "target": target,
         "risk": risk,
-        "rr": RR,
+        "rr": rr,
         "break_h": c1["h"],
         "break_l": c1["l"],
+        "c1_t": c1["t"],
+        "c2_t": None,  # filled by caller
+        "c3_t": c3["t"],
+        "c1_o": c1["o"],
+        "c1_h": c1["h"],
+        "c1_l": c1["l"],
+        "c1_c": c1["c"],
         "signal_t": c3["t"],
     }
 
 
-def apply_signal(c0, c1, c2, c3):
+def apply_signal(c0, c1, c2, c3, rr: float):
     """Volume removed. Returns trade dict or None."""
     c2_red = c2["c"] < c2["o"]
     c2_green = c2["c"] > c2["o"]
@@ -131,12 +145,18 @@ def apply_signal(c0, c1, c2, c3):
     breakout = c2["h"] > c1["h"]
     if breakout and above and not (c2_green and c3_green):
         if c2_red or (c2_green and c3_red):
-            return build_trade("BUY", c1, c3)
+            t = build_trade("BUY", c1, c3, rr)
+            t["c2_t"] = c2["t"]
+            t["pattern"] = "BO c2>c1.H"
+            return t
 
     breakdown = c2["l"] < c1["l"]
     if breakdown and below and not (c2_red and c3_red):
         if c2_green or (c2_red and c3_green):
-            return build_trade("SELL", c1, c3)
+            t = build_trade("SELL", c1, c3, rr)
+            t["c2_t"] = c2["t"]
+            t["pattern"] = "BD c2<c1.L"
+            return t
     return None
 
 
@@ -169,7 +189,9 @@ def session_bars_after(rows, day: datetime.date, after_iso: str):
 
 
 def resolve_outcome(trade, bars_after):
-    """Walk forward after signal. Same-bar SL+TP -> adverse (SL) first."""
+    """Walk forward after signal. Same-bar SL+TP -> adverse (SL) first.
+    Returns (outcome, exit_time_iso|None, exit_price|None).
+    """
     buy = trade["side"] == "BUY"
     sl, tgt = trade["sl"], trade["target"]
     for b in bars_after:
@@ -177,32 +199,40 @@ def resolve_outcome(trade, bars_after):
             hit_sl = b["l"] <= sl
             hit_tg = b["h"] >= tgt
             if hit_sl and hit_tg:
-                return "SL"
+                return "SL", b["t"], sl
             if hit_sl:
-                return "SL"
+                return "SL", b["t"], sl
             if hit_tg:
-                return "TARGET"
+                return "TARGET", b["t"], tgt
         else:
             hit_sl = b["h"] >= sl
             hit_tg = b["l"] <= tgt
             if hit_sl and hit_tg:
-                return "SL"
+                return "SL", b["t"], sl
             if hit_sl:
-                return "SL"
+                return "SL", b["t"], sl
             if hit_tg:
-                return "TARGET"
-    return "OPEN"
+                return "TARGET", b["t"], tgt
+    last = bars_after[-1] if bars_after else None
+    return "OPEN", (last["t"] if last else None), (last["c"] if last else None)
+
+
+def hhmm(iso):
+    if not iso:
+        return "-"
+    return datetime.fromisoformat(iso).strftime("%H:%M")
 
 
 def main():
     force = "--force" in sys.argv
+    rr = parse_rr(sys.argv)
     d0, d1 = "2026-07-20", "2026-07-30"
     days = [datetime(2026, 7, d).date() for d in (27, 28, 29, 30)]
     cid, access = load_auth()
 
     print(f"Cache dir: {CACHE}")
     print("Rule: first-4 (ignore c0) + EMA9/15 | VOL OFF | c3 OHLC clear EMA")
-    print("SL = break candle (c1) opposite extreme | Target 1:1.6")
+    print(f"SL = break candle (c1) opposite extreme | Target 1:{rr}")
     print(f"TFs: {', '.join(TFS)} min | Range lookback {d0}→{d1}\n")
 
     summary = []  # (name, tf, day, side, outcome)
@@ -230,23 +260,27 @@ def main():
                     summary.append((name, res, str(day), "NODATA", "-"))
                     continue
                 c0, c1, c2, c3 = bars[0], bars[1], bars[2], bars[3]
-                trade = apply_signal(c0, c1, c2, c3)
+                trade = apply_signal(c0, c1, c2, c3, rr)
                 if not trade:
                     summary.append((name, res, str(day), "NONE", "-"))
-                    t3 = datetime.fromisoformat(c3["t"]).strftime("%H:%M")
-                    print(f"    {day} → NONE @c3={t3}")
+                    print(f"    {day} → NONE @c3={hhmm(c3['t'])}")
                     continue
 
                 after = session_bars_after(rows, day, c3["t"])
-                outcome = resolve_outcome(trade, after)
+                outcome, exit_t, exit_px = resolve_outcome(trade, after)
+                trade["outcome"] = outcome
+                trade["exit_t"] = exit_t
+                trade["exit_px"] = exit_px
+                trade["c2_o"], trade["c2_h"], trade["c2_l"], trade["c2_c"] = c2["o"], c2["h"], c2["l"], c2["c"]
+                trade["c3_o"], trade["c3_h"], trade["c3_l"], trade["c3_c"] = c3["o"], c3["h"], c3["l"], c3["c"]
+                trade["c3_ema9"], trade["c3_ema15"] = c3["ema9"], c3["ema15"]
                 summary.append((name, res, str(day), trade["side"], outcome))
-                trades_log.append((name, res, day, trade, outcome))
-                t3 = datetime.fromisoformat(c3["t"]).strftime("%H:%M")
+                trades_log.append((name, res, str(day), trade))
                 print(
-                    f"    {day} → {trade['side']:4} @c3={t3} "
+                    f"    {day} → {trade['side']:4} @c3={hhmm(c3['t'])} "
                     f"Entry={trade['entry']:.2f} SL={trade['sl']:.2f} "
-                    f"T={trade['target']:.2f} (1:{RR}) risk={trade['risk']:.2f} "
-                    f"→ {outcome}"
+                    f"T={trade['target']:.2f} (1:{rr}) risk={trade['risk']:.2f} "
+                    f"→ {outcome}" + (f" @{hhmm(exit_t)}" if exit_t and outcome != "OPEN" else "")
                 )
 
     print("\n========== SIGNAL MATRIX (week) ==========")
@@ -269,11 +303,38 @@ def main():
     tgt = sum(1 for *_, o in summary if o == "TARGET")
     sl = sum(1 for *_, o in summary if o == "SL")
     opn = sum(1 for *_, o in summary if o == "OPEN")
-    # R: target = +6, SL = -1, OPEN = 0 (mark-to-close ignored)
-    net_r = tgt * RR + sl * (-1.0)
+    net_r = tgt * rr + sl * (-1.0)
     print(f"\nTotals: BUY={buys}  SELL={sells}")
     print(f"Outcomes (same-day after signal): TARGET={tgt}  SL={sl}  OPEN={opn}")
-    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{RR}")
+    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{rr}")
+
+    print("\n========== DETAILED TRADES (verify) ==========")
+    print(
+        f"{'#':3} {'Index':7} {'TF':4} {'Day':10} {'Side':4} "
+        f"{'c1':5} {'c2':5} {'c3':5} "
+        f"{'c1.H':>10} {'c1.L':>10} {'Entry':>10} {'SL':>10} {'Target':>10} {'Risk':>8} "
+        f"{'Out':6} {'Exit':5} {'R':>5}"
+    )
+    for i, (name, res, day, trade) in enumerate(trades_log, 1):
+        r_mult = trade["rr"] if trade["outcome"] == "TARGET" else (-1.0 if trade["outcome"] == "SL" else 0.0)
+        print(
+            f"{i:<3} {name:7} {res+'m':4} {day:10} {trade['side']:4} "
+            f"{hhmm(trade['c1_t']):5} {hhmm(trade['c2_t']):5} {hhmm(trade['c3_t']):5} "
+            f"{trade['c1_h']:10.2f} {trade['c1_l']:10.2f} "
+            f"{trade['entry']:10.2f} {trade['sl']:10.2f} {trade['target']:10.2f} {trade['risk']:8.2f} "
+            f"{trade['outcome']:6} {hhmm(trade['exit_t']):5} {r_mult:5.1f}"
+        )
+
+    # Extra candle OHLC dump for chart verify
+    print("\n========== CANDLE OHLC (c1 break / c2 / c3 signal) ==========")
+    for i, (name, res, day, trade) in enumerate(trades_log, 1):
+        print(
+            f"#{i} {name} {res}m {day} {trade['side']} | "
+            f"c1@{hhmm(trade['c1_t'])} O={trade['c1_o']:.2f} H={trade['c1_h']:.2f} L={trade['c1_l']:.2f} C={trade['c1_c']:.2f} | "
+            f"c2@{hhmm(trade['c2_t'])} O={trade['c2_o']:.2f} H={trade['c2_h']:.2f} L={trade['c2_l']:.2f} C={trade['c2_c']:.2f} | "
+            f"c3@{hhmm(trade['c3_t'])} O={trade['c3_o']:.2f} H={trade['c3_h']:.2f} L={trade['c3_l']:.2f} C={trade['c3_c']:.2f} "
+            f"EMA9={trade['c3_ema9']:.2f} EMA15={trade['c3_ema15']:.2f}"
+        )
 
 
 if __name__ == "__main__":

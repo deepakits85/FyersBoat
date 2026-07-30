@@ -13,8 +13,10 @@ Caches Fyers history under
 `FyersLoginWeb/bin/Release/net9.0/datacache/multitf/`.
 
 ```bash
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py          # use cache
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force  # re-fetch
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py                # RR=1.6 default
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py --rr=2
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py --rr=3
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force        # re-fetch
 ```
 
 TFs: 3, 5, 10, 15, 20, 30 min — Nifty / Bank / Sensex.
