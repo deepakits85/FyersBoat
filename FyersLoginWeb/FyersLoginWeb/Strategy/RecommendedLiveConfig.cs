@@ -5,21 +5,17 @@ using System.Linq;
 namespace FyersLoginWeb.Strategy
 {
     /// <summary>
-    /// Live defaults — 29 Jul 2026.
+    /// DATA-BACKED live defaults (R&amp;D): jo 11m index pe jeeta woh.
     ///
-    /// LOCKED mechanics (change mat karo bina explicit order):
-    ///   1) Breakout confirm = 3m Close &gt; <b>reference High</b> (prior-high nahi)
-    ///   2) Confirm candle pe entry nahi
-    ///   3) Entry fill = <b>reference High</b> pe (WaitingForEntry)
+    /// Winner (Aug 2025–Jul 2026 index, strict): ~150 trades, ~+63.8R, ~5.3R/mo.
+    /// Entry model: Close confirm @ EffLevel, SAME candle pe fill agar Low&lt;=cap
+    /// (sirf gap hone pe pullback wait). "Next-bar @ refHigh only" R&amp;D pe haar gaya (~+1R).
     ///
-    /// Nifty + BankNifty, refs 11:15 + 12:45, RR 1:2, 90-min wait ON,
-    /// trailing ON, 30m gap, max 2 SL/day. Sensex / 10:45 OFF.
+    /// Nifty + BankNifty, refs 11:15 + 12:45 (10:45 filter-skip), RR 1:2,
+    /// 90m wait ON, strict filters, trail ON.
     /// </summary>
     public static class RecommendedLiveConfig
     {
-        /// <summary>Confirm + entry hamesha 30m reference High/Low — prior-high mix forbidden.</summary>
-        public const bool UseReferenceHighForConfirmAndEntry = true;
-
         public static readonly TimeSpan[] Refs =
         {
             new TimeSpan(11, 15, 0),
@@ -34,11 +30,6 @@ namespace FyersLoginWeb.Strategy
         public const int MaxSlPerDay = 2;
         public const int MinGapMinutes = 30;
         public const int MaxReferenceWaitMinutes = 90;
-        /// <summary>
-        /// Candle CLOSE (bar EndTime) ke baad itne minute tak entry allow.
-        /// Strategy EntryTime = bar StartTime hai; live freshness EndTime se measure hoti hai
-        /// taaki close confirm ke turant baad trade miss na ho.
-        /// </summary>
         public const int FreshSignalMaxAgeMinutes = 6;
         public const int CandleMinutes = 3;
 
@@ -61,7 +52,8 @@ namespace FyersLoginWeb.Strategy
                 SquareOffTime = SquareOffTime,
                 UseReferenceMaxWait = true,
                 MaxReferenceWaitMinutes = MaxReferenceWaitMinutes,
-                RequireCloseConfirm = true,   // 3m CLOSE confirm — wick-only entry nahi
+                // DATA winner: close hold @ EffLevel, fill same candle if Low<=cap
+                RequireCloseConfirm = true,
                 ConfirmRetrFirstOnly = false,
                 UseRetracementFirst = true,
                 UsePriorLevelBreak = true,
@@ -70,10 +62,6 @@ namespace FyersLoginWeb.Strategy
             return cfg;
         }
 
-        /// <summary>
-        /// History API kabhi forming (incomplete) 3m candle bhi de sakti hai.
-        /// Strategy sirf CLOSED candles pe chalti hai — EndTime &gt; now wali drop.
-        /// </summary>
         public static System.Collections.Generic.List<Candle> ClosedOnly(
             System.Collections.Generic.List<Candle> candles, DateTime now)
         {

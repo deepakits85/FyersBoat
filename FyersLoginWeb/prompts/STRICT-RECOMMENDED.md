@@ -1,53 +1,36 @@
-# STRICT recommended live config (29 Jul 2026 findings)
+# DATA-BACKED recommended config (R&D)
 
 Branch: **`cursor/strict-recommended-90e4`**
 
-> **Retest (29 Jul night):** confirm/entry ab sirf **refHigh** (prior-high bug fix).
-> Full numbers: artifact `RETEST-AFTER-REFHIGH-FIX.md`.
+## Principle
+Jo **11m index data** pe jeete, wahi use. Theory / “live feel” rules se data winner mat todna.
 
-## COMPARE mode (kal live)
+## Winner (verified restore)
+Index Aug 2025–Jul 2026 | strict filters | close-confirm @ EffLevel | **same-candle fill** if Low≤cap:
 
-`UseCandleEntry=true` + `UseLiveEntry=true`
+| | |
+|--|--|
+| TAKEN | ~150 trades |
+| NetR | **~+63.8R** |
+| Avg / month | **~+5.3R** |
+| Pos months | 10/12 |
 
-**Rules (dono modes):**
-1. Breakout: 3m **Close > reference high** (confirm) — prior-high mix nahi
-2. Confirm candle pe entry **nahi** (confirm close ke baad hi pata chalta hai)
-3. **Uske baad** next candle/ticks pe price jab **ref high (entry)** pe aaye → entry
-
-- **CLOSE** = next 3m candle pe Low<=refHigh dikhe (us candle close ke baad signal)  
-- **TICK** = WaitingForEntry me LTP jab ref-high touch kare → turant @ ref high  
-- Pehli → paper ENTRY; doosri → SHADOW  
-- Log: `logs/live-compare-YYYY-MM-DD.log` (`HH:mm:ss.fff`)
-
-## RAKHO (strategy rules)
+## Rules (DATA)
 
 | Setting | Value |
 |---------|--------|
-| Indices | Nifty + BankNifty |
-| Refs | **11:15, 12:45** |
+| Indices | Nifty + BankNifty (Sensex filter-off) |
+| Refs | 11:15, 12:45 (10:45 skipped by strict) |
 | Filters | **strict** |
-| RR | **1:2** |
-| 90 min wait | **ON** |
-| Sensex / 10:45 | **OFF** |
-| Breakout | **CLOSE > reference HIGH** (LOCKED) |
-| Entry | **@ reference HIGH** after confirm bar (LOCKED) |
+| RR | 1:2 + trail |
+| 90m wait | ON |
+| Breakout | Close hold @ **EffLevel** (prior-high on retrace-first OK) |
+| Entry | Confirm candle pe fill agar Low≤cap; gap pe pullback wait |
 
-## MAT RAKHO
-
-- Sensex, 10:45, RR 1:1, 90-wait OFF, sirf-11:15, tick/wick entry (default)
+## Haar gaya (mat use karo abhi)
+“Confirm candle pe entry nahi + next bar @ refHigh only” → same 11m pe ~**+1.4R** (almost flat).
 
 ## Code
-
-- `Strategy/RecommendedLiveConfig.cs` — single source of truth
-- `Services/LiveTradingService.cs` — live paper bot (strict wired)
-- `Strategy/EntryFilterConfig.cs` → `ReduceStopLossStrictPreset()`
-- `Strategy/BreakoutRetracementStrategy.cs` → `ConfirmLevel` = ref High/Low
-- `Services/FyersLiveFeed.cs` — tick feed available, `UseLiveEntry=false`
-
-## CLI backtest
-
-```bash
-dotnet run --project FyersLoginWeb/BacktestToday -c Release -- \
-  --mode index --from 2025-08-01 --to 2026-07-28 --filters strict \
-  --refs 11:15,12:45 --ref-wait true
-```
+- `BreakoutRetracementStrategy` — data-era entry (83cdcab path)
+- `RecommendedLiveConfig` — strict + this entry model
+- `EntryFilterConfig.ReduceStopLossStrictPreset()`
