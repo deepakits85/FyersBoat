@@ -73,6 +73,15 @@ namespace FyersLoginWeb.Strategy
         public int PriorLevelLookback { get; set; } = 1;
 
         /// <summary>
+        /// Retracement confirm mode after first breakout:
+        /// false (default historically) = must touch RetracementPercent level (e.g. 50% mid).
+        /// true = koi bhi pullback back to/through breakout level (EffLevel) enough —
+        /// "ek baar retracement ho gaya" — full 50% complete zaroori nahi.
+        /// SL ab bhi RetracementPercent level par rehta hai (risk structure).
+        /// </summary>
+        public bool SoftRetracementConfirm { get; set; } = false;
+
+        /// <summary>
         /// "Retracement-first" path: agar pehle breakout se PEHLE hi price 50% level tak aa jaye,
         /// to seedha 2nd-breakout ka wait (bina asli pehle breakout ke). Default true (current).
         /// false karne par SIRF asli "pehle breakout -> retracement -> dobara breakout" wale setups.

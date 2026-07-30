@@ -58,6 +58,14 @@ namespace FyersLoginWeb.Strategy
             ? _reference!.High + _config.EntryBufferPoints
             : _reference!.Low - _config.EntryBufferPoints;
 
+        /// <summary>
+        /// Retracement confirm: soft = pullback to EffLevel; else full RetracementPercent (50%).
+        /// </summary>
+        private bool IsRetracementTouch(Candle c) =>
+            _config.SoftRetracementConfirm
+                ? (IsLong ? c.Low <= EffLevel : c.High >= EffLevel)
+                : (IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel);
+
         public BreakoutRetracementStrategy(StrategyConfig? config = null, TradeSide side = TradeSide.Long)
         {
             _config = config ?? new StrategyConfig();
@@ -159,7 +167,7 @@ namespace FyersLoginWeb.Strategy
                 return HandleFirstBreach(c); // isi candle ko naye setup ki tarah dekho
             }
 
-            bool retr = IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel;
+            bool retr = IsRetracementTouch(c);
             if (retr)
             {
                 _retracementExtreme = IsLong ? c.Low : c.High;
@@ -171,22 +179,28 @@ namespace FyersLoginWeb.Strategy
                     State = State,
                     JustConfirmed = StrategyState.RetracementConfirmed,
                     Message = IsLong
-                        ? $"RETRACEMENT: 3m Low {c.Low} <= level {_retracementLevel}. Ab 2nd breakout."
-                        : $"RETRACEMENT: 3m High {c.High} >= level {_retracementLevel}. Ab 2nd breakdown."
+                        ? (_config.SoftRetracementConfirm
+                            ? $"RETRACEMENT: 3m Low {c.Low} <= refHigh {EffLevel} (soft, 50% not required). Ab 2nd breakout."
+                            : $"RETRACEMENT: 3m Low {c.Low} <= level {_retracementLevel}. Ab 2nd breakout.")
+                        : (_config.SoftRetracementConfirm
+                            ? $"RETRACEMENT: 3m High {c.High} >= refLow {EffLevel} (soft, 50% not required). Ab 2nd breakdown."
+                            : $"RETRACEMENT: 3m High {c.High} >= level {_retracementLevel}. Ab 2nd breakdown.")
                 };
             }
             return Info(IsLong
-                ? $"Waiting retracement: 3m Low {c.Low} > level {_retracementLevel}."
-                : $"Waiting retracement: 3m High {c.High} < level {_retracementLevel}.");
+                ? (_config.SoftRetracementConfirm
+                    ? $"Waiting retracement: 3m Low {c.Low} > refHigh {EffLevel}."
+                    : $"Waiting retracement: 3m Low {c.Low} > level {_retracementLevel}.")
+                : (_config.SoftRetracementConfirm
+                    ? $"Waiting retracement: 3m High {c.High} < refLow {EffLevel}."
+                    : $"Waiting retracement: 3m High {c.High} < level {_retracementLevel}."));
         }
 
         // Step 3: doosra breach -> setup ready, entry dekho
         private StrategyResult HandleSecondBreach(Candle c)
         {
-            // agar is candle par phir se retracement level touch hua to retracement time
-            // refresh kar do (taaki latest retest se freshness gine)
-            bool retrAgain = IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel;
-            if (retrAgain)
+            // agar is candle par phir se soft/full retracement touch hua to time refresh
+            if (IsRetracementTouch(c))
             {
                 _retracementExtreme = IsLong ? c.Low : c.High;
                 _retracementTime = c.StartTime;

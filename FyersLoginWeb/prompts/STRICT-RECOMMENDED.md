@@ -9,7 +9,8 @@ User-selected live stack (manual-chart aligned):
 | Index | **Nifty only** |
 | Refs | **11:15 only** |
 | Breakout level | **Reference High/Low** (`UsePriorLevelBreak=false`) |
-| Sequence | **First BO → 50% → 2nd BO** (`UseRetracementFirst=false`) |
+| Sequence | **First BO → soft retrace → 2nd BO** (`UseRetracementFirst=false`, `SoftRetracementConfirm=true`) |
+| Retracement | Pullback to ref High/Low enough — **full 50% touch not required** (SL still at 50% structure) |
 | Filters | **OFF** (no skip) |
 | Entry | Close confirm @ EffLevel; same-candle fill if Low ≤ Cap |
 | Risk | RR=2, trail +1R, 90m wait, 14:45 square-off |
@@ -18,7 +19,7 @@ User-selected live stack (manual-chart aligned):
 - `LiveTradingService.Legs` — Nifty only
 - `RecommendedLiveConfig.Refs` — 11:15
 - `RecommendedLiveConfig.EntryFilters()` — empty
-- `MakeConfig` — `UsePriorLevelBreak=false`, `UseRetracementFirst=false`
+- `MakeConfig` — `UsePriorLevelBreak=false`, `UseRetracementFirst=false`, `SoftRetracementConfirm=true`
 
 ## Note on older +63.8R number
 
