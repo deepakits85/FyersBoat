@@ -1,6 +1,6 @@
 # Recommended live config (current R&D)
 
-Branch: **`cursor/strict-recommended-90e4`**
+Branch: **`cursor/no-retr-first-90e4`**
 
 User-selected live stack (manual-chart aligned):
 
@@ -9,6 +9,7 @@ User-selected live stack (manual-chart aligned):
 | Index | **Nifty only** |
 | Refs | **11:15 only** |
 | Breakout level | **Reference High/Low** (`UsePriorLevelBreak=false`) |
+| Sequence | **First BO → 50% → 2nd BO** (`UseRetracementFirst=false`) |
 | Filters | **OFF** (no skip) |
 | Entry | Close confirm @ EffLevel; same-candle fill if Low ≤ Cap |
 | Risk | RR=2, trail +1R, 90m wait, 14:45 square-off |
@@ -17,7 +18,7 @@ User-selected live stack (manual-chart aligned):
 - `LiveTradingService.Legs` — Nifty only
 - `RecommendedLiveConfig.Refs` — 11:15
 - `RecommendedLiveConfig.EntryFilters()` — empty
-- `MakeConfig` — `UsePriorLevelBreak=false`
+- `MakeConfig` — `UsePriorLevelBreak=false`, `UseRetracementFirst=false`
 
 ## Note on older +63.8R number
 

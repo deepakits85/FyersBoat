@@ -9,11 +9,11 @@ namespace FyersLoginWeb.Strategy
     ///   - Index: Nifty only
     ///   - Refs: 11:15 only
     ///   - Breakout / entry level: REFERENCE High/Low (UsePriorLevelBreak=false)
-    ///   - Entry: close confirm @ EffLevel(=ref H/L); same-candle fill if Low ≤ Cap; else pullback wait
-    ///   - Filters: OFF (koi skip nahi)
-    ///   - Risk: RR=2, trail after +1R, 90m wait, 14:45 square-off
-    ///
-    /// Older +63.8R was a different stack (Nifty+Bank, prior-high, strict). Do not mix numbers.
+    ///   - Sequence: pehle asli first breakout, phir 50% retrace, phir 2nd breakout → entry
+    ///     (UseRetracementFirst=false — "pehle hi retracement" path OFF)
+    ///   - Entry: close confirm @ EffLevel; same-candle fill if Low ≤ Cap; else pullback wait
+    ///   - Filters: OFF
+    ///   - Risk: RR=2, trail, 90m wait, 14:45 square-off
     /// </summary>
     public static class RecommendedLiveConfig
     {
@@ -56,7 +56,8 @@ namespace FyersLoginWeb.Strategy
                 // DATA winner: close hold @ EffLevel, fill same candle if Low<=cap
                 RequireCloseConfirm = true,
                 ConfirmRetrFirstOnly = false,
-                UseRetracementFirst = true,
+                // Strict sequence: first BO → 50% → 2nd BO (no retracement-before-breakout)
+                UseRetracementFirst = false,
                 // Manual-match: breakout/entry = ref High only (prior-high OFF)
                 UsePriorLevelBreak = false,
             };
