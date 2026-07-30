@@ -2,18 +2,14 @@
 """
 EMA failed-break signal — multi-TF backtest.
 
-Rules:
+Rules (Bank 15m 5-Jun BUY style only):
   - First session candle ignored for signals
-  - BUY: clear below EMA9+EMA15, optional near day-low (10% of day range);
-         prior candle High broken; break candle RED else next RED; entry on that close
-  - SELL: clear above both EMAs, optional near day-high; Low broken; green / next green
+  - BUY: clear below EMA9+EMA15, optional near day-low (10%);
+         prior High broken by GREEN candle → next candle RED → entry on that close
+  - SELL: clear above both EMAs, optional near day-high;
+         prior Low broken by RED candle → next candle GREEN → entry on that close
   - SL: min/max of prior 1–2 candles; if risk > 50% of candle just before broken → cap to 50%
   - Target 1:3
-
-Examples:
-  python3 ema_failed_break_multitf.py --tfs=10,15,20,30 --quiet
-  python3 ema_failed_break_multitf.py --no-day-prox --tfs=10,15,20,30 --quiet
-  python3 ema_failed_break_multitf.py --sl-lookback=1 --rr=3 --quiet
 """
 from __future__ import annotations
 
@@ -174,33 +170,32 @@ def compute_sl(bars, entry_idx, broken_idx, entry, is_buy, sl_lookback):
 
 
 def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr):
-    if break_idx < 1 or break_idx >= len(bars):
+    """Bank 15m 5-Jun style only:
+    BUY: High break + green break + next red → entry next close
+    SELL: Low break + red break + next green → entry next close
+    """
+    if break_idx < 1 or break_idx + 1 >= len(bars):
         return None
     brk = bars[break_idx]
     broken = bars[break_idx - 1]
+    nxt = bars[break_idx + 1]
 
     if is_buy:
         if not (brk["h"] > broken["h"]):
             return None
+        if not is_green(brk):
+            return None
+        if not is_red(nxt):
+            return None
     else:
         if not (brk["l"] < broken["l"]):
             return None
-
-    if is_buy:
-        if is_red(brk):
-            entry_idx = break_idx
-        elif break_idx + 1 < len(bars) and is_red(bars[break_idx + 1]):
-            entry_idx = break_idx + 1
-        else:
+        if not is_red(brk):
             return None
-    else:
-        if is_green(brk):
-            entry_idx = break_idx
-        elif break_idx + 1 < len(bars) and is_green(bars[break_idx + 1]):
-            entry_idx = break_idx + 1
-        else:
+        if not is_green(nxt):
             return None
 
+    entry_idx = break_idx + 1
     entry_bar = bars[entry_idx]
     if is_buy:
         if not (clear_below(entry_bar, entry_bar["ema9"]) and clear_below(entry_bar, entry_bar["ema15"])):
@@ -244,7 +239,7 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
         "broken_t": broken["t"],
         "day_hi": day_hi,
         "day_lo": day_lo,
-        "confirm": "break" if entry_idx == break_idx else "next",
+        "confirm": "next",  # always next candle after green/red fail break
     }
 
 
@@ -323,6 +318,7 @@ def main():
     cid, access = load_auth()
     print(f"Cache dir: {CACHE}")
     print("Rule: EMA failed-break | first candle ignore | EMA9+15 clear")
+    print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
     print(f"Day proximity: {'ON '+str(prox_pct*100)+'%' if use_day_prox else 'OFF'}")
     print(f"SL lookback={sl_lookback} (+50% cap) | Target 1:{rr}")
     print(f"TFs: {', '.join(tfs)} | Analyze {analyze_from_s}→{analyze_to_s}\n")

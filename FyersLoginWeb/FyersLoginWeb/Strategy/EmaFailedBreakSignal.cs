@@ -6,9 +6,10 @@ namespace FyersLoginWeb.Strategy
     /// <summary>
     /// EMA failed-break opener (first session candle ignored).
     ///
-    /// BUY (price below EMA9+EMA15, optional near day-low):
-    ///   prior candle High break → break candle RED, else next candle RED → entry on that close.
-    /// SELL (price above both EMAs, optional near day-high): opposite (Low break + green).
+    /// BUY (below EMA9+EMA15, optional near day-low) — Bank 15m 5-Jun style only:
+    ///   prior High broken by a GREEN candle → next candle must be RED → entry on that close.
+    /// SELL (above both EMAs, optional near day-high):
+    ///   prior Low broken by a RED candle → next candle must be GREEN → entry on that close.
     ///
     /// SL = lowest/highest of prior 1–2 candles; if risk &gt; 50% of candle just before broken,
     ///      cap SL distance to that 50%. Target 1:3.
@@ -63,44 +64,29 @@ namespace FyersLoginWeb.Strategy
         static EmaFailedBreakTrade? TrySignal(
             IReadOnlyList<EmaCandle> bars, int breakIdx, bool isBuy, EmaFailedBreakConfig cfg)
         {
-            if (breakIdx < 1 || breakIdx >= bars.Count)
+            if (breakIdx < 1 || breakIdx + 1 >= bars.Count)
                 return null;
 
             var brk = bars[breakIdx];
             var broken = bars[breakIdx - 1]; // jiska high/low break ho raha hai
+            var next = bars[breakIdx + 1];   // confirm candle (required)
 
             if (isBuy)
             {
-                if (!(brk.High > broken.High))
-                    return null;
+                // High break + green break candle + next red → entry on next close
+                if (!(brk.High > broken.High)) return null;
+                if (!IsGreen(brk)) return null;
+                if (!IsRed(next)) return null;
             }
             else
             {
-                if (!(brk.Low < broken.Low))
-                    return null;
+                // Low break + red break candle + next green → entry on next close
+                if (!(brk.Low < broken.Low)) return null;
+                if (!IsRed(brk)) return null;
+                if (!IsGreen(next)) return null;
             }
 
-            // Confirm: break candle color, else next candle
-            int entryIdx;
-            if (isBuy)
-            {
-                if (IsRed(brk))
-                    entryIdx = breakIdx;
-                else if (breakIdx + 1 < bars.Count && IsRed(bars[breakIdx + 1]))
-                    entryIdx = breakIdx + 1;
-                else
-                    return null;
-            }
-            else
-            {
-                if (IsGreen(brk))
-                    entryIdx = breakIdx;
-                else if (breakIdx + 1 < bars.Count && IsGreen(bars[breakIdx + 1]))
-                    entryIdx = breakIdx + 1;
-                else
-                    return null;
-            }
-
+            int entryIdx = breakIdx + 1;
             var entryBar = bars[entryIdx];
 
             // Context on entry candle: clear of both EMAs + optional day extreme

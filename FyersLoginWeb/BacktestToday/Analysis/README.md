@@ -1,9 +1,10 @@
 # Analysis scripts
 
 ## ema_failed_break_multitf.py (current)
-EMA failed-break opener. First candle ignore. EMA9+15 clear.
-Day-low/high proximity 10% optional (`--no-day-prox` to disable).
-SL: prior 1–2 candle extreme, capped at 50% of candle before broken. Target 1:3.
+EMA failed-break (Bank 15m 5-Jun style). First candle ignore. EMA9+15 clear.
+BUY: High break by **green** → **next red** → entry close.
+SELL: Low break by **red** → **next green** → entry close.
+Day proximity 10% optional (`--no-day-prox`). SL prior 1–2 + 50% cap. Target 1:3.
 
 ```bash
 python3 BacktestToday/Analysis/ema_failed_break_multitf.py \
