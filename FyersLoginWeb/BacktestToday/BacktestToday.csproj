@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BacktestToday</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+  <!-- Reuse strategy engine from the web app (no DB / ASP.NET) -->
+  <ItemGroup>
+    <Compile Include="../FyersLoginWeb/Strategy/**/*.cs" Link="Strategy/%(Filename)%(Extension)" />
+    <Compile Include="../FyersLoginWeb/Models/TokenModel.cs" Link="Models/TokenModel.cs" />
+    <Compile Include="../FyersLoginWeb/Models/FyersSettings.cs" Link="Models/FyersSettings.cs" />
+  </ItemGroup>
+</Project>
