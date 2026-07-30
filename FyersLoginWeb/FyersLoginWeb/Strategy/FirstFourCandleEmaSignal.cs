@@ -15,9 +15,9 @@ namespace FyersLoginWeb.Strategy
 
         /// <summary>
         /// candles[0]=ignored, [1]=c1 (break level), [2]=c2, [3]=c3.
-        /// Returns null if no signal.
+        /// invert=true → pattern BUY pe SELL lo, SELL pe BUY (fade).
         /// </summary>
-        public static FourCandleEmaTrade? Apply(IReadOnlyList<EmaCandle> candles)
+        public static FourCandleEmaTrade? Apply(IReadOnlyList<EmaCandle> candles, bool invert = false)
         {
             if (candles == null || candles.Count < 4)
                 return null;
@@ -34,31 +34,40 @@ namespace FyersLoginWeb.Strategy
             bool aboveEMA = ClearAbove(c3, c3.Ema9) && ClearAbove(c3, c3.Ema15);
             bool belowEMA = ClearBelow(c3, c3.Ema9) && ClearBelow(c3, c3.Ema15);
 
+            string? pattern = null;
             bool breakout = c2.High > c1.High;
             if (breakout && aboveEMA && !(c2Green && c3Green))
             {
                 if (c2Red || (c2Green && c3Red))
-                    return BuildTrade("BUY", c1, c3);
+                    pattern = "BUY";
             }
 
-            bool breakdown = c2.Low < c1.Low;
-            if (breakdown && belowEMA && !(c2Red && c3Red))
+            if (pattern == null)
             {
-                if (c2Green || (c2Red && c3Green))
-                    return BuildTrade("SELL", c1, c3);
+                bool breakdown = c2.Low < c1.Low;
+                if (breakdown && belowEMA && !(c2Red && c3Red))
+                {
+                    if (c2Green || (c2Red && c3Green))
+                        pattern = "SELL";
+                }
             }
 
-            return null;
+            if (pattern == null)
+                return null;
+
+            string side = invert ? (pattern == "BUY" ? "SELL" : "BUY") : pattern;
+            var trade = BuildTrade(side, c1, c3);
+            trade.PatternSide = pattern;
+            trade.Inverted = invert;
+            return trade;
         }
 
         /// <summary>Side string only — "BUY" / "SELL" / "".</summary>
-        public static string ApplySide(IReadOnlyList<EmaCandle> candles) =>
-            Apply(candles)?.Side ?? "";
+        public static string ApplySide(IReadOnlyList<EmaCandle> candles, bool invert = false) =>
+            Apply(candles, invert)?.Side ?? "";
 
         /// <summary>
-        /// BUY: break c1.High → Entry=c1.High, SL=c1.Low (lowest of break candle).
-        /// SELL: break c1.Low → Entry=c1.Low, SL=c1.High (highest of break candle).
-        /// Target 1:1.6.
+        /// BUY: Entry=c1.High, SL=c1.Low. SELL: Entry=c1.Low, SL=c1.High. Target 1:1.6.
         /// </summary>
         static FourCandleEmaTrade BuildTrade(string side, EmaCandle breakCandle, EmaCandle signalCandle)
         {
@@ -110,6 +119,9 @@ namespace FyersLoginWeb.Strategy
     public class FourCandleEmaTrade
     {
         public string Side { get; set; } = "";
+        /// <summary>Pattern side before invert (BUY/SELL).</summary>
+        public string PatternSide { get; set; } = "";
+        public bool Inverted { get; set; }
         public decimal EntryPrice { get; set; }
         public decimal StopLoss { get; set; }
         public decimal Target { get; set; }

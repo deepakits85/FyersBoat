@@ -158,7 +158,7 @@ def build_trade(side: str, c1, c3, rr: float):
     }
 
 
-def apply_signal(c0, c1, c2, c3, rr: float):
+def apply_signal(c0, c1, c2, c3, rr: float, invert: bool = False):
     c2_red = c2["c"] < c2["o"]
     c2_green = c2["c"] > c2["o"]
     c3_red = c3["c"] < c3["o"]
@@ -167,22 +167,27 @@ def apply_signal(c0, c1, c2, c3, rr: float):
     above = clear_above(c3, c3["ema9"]) and clear_above(c3, c3["ema15"])
     below = clear_below(c3, c3["ema9"]) and clear_below(c3, c3["ema15"])
 
+    pattern = None
     breakout = c2["h"] > c1["h"]
     if breakout and above and not (c2_green and c3_green):
         if c2_red or (c2_green and c3_red):
-            t = build_trade("BUY", c1, c3, rr)
-            t["c2_t"] = c2["t"]
-            t["pattern"] = "BO c2>c1.H"
-            return t
+            pattern = "BUY"
 
-    breakdown = c2["l"] < c1["l"]
-    if breakdown and below and not (c2_red and c3_red):
-        if c2_green or (c2_red and c3_green):
-            t = build_trade("SELL", c1, c3, rr)
-            t["c2_t"] = c2["t"]
-            t["pattern"] = "BD c2<c1.L"
-            return t
-    return None
+    if pattern is None:
+        breakdown = c2["l"] < c1["l"]
+        if breakdown and below and not (c2_red and c3_red):
+            if c2_green or (c2_red and c3_green):
+                pattern = "SELL"
+
+    if pattern is None:
+        return None
+
+    side = ("SELL" if pattern == "BUY" else "BUY") if invert else pattern
+    t = build_trade(side, c1, c3, rr)
+    t["c2_t"] = c2["t"]
+    t["pattern"] = pattern
+    t["inverted"] = invert
+    return t
 
 
 def first_session_bars(rows, day: datetime.date, need=4):
@@ -257,6 +262,7 @@ def trading_days(rows, analyze_from: datetime.date, analyze_to: datetime.date):
 def main():
     force = "--force" in sys.argv
     quiet = "--quiet" in sys.argv  # skip NONE day spam
+    invert = "--invert" in sys.argv
     rr = float(arg_val(sys.argv, "rr", DEFAULT_RR))
     tfs = [x.strip() for x in arg_val(sys.argv, "tfs", ",".join(DEFAULT_TFS)).split(",") if x.strip()]
     # fetch window (EMA warmup): default 20 Apr → 30 Jul; analyze: 1 May → 30 Jul
@@ -274,6 +280,8 @@ def main():
     print(f"Cache dir: {CACHE}")
     print("Rule: first-4 (ignore c0) + EMA9/15 | VOL OFF | c3 OHLC clear EMA")
     print(f"SL = break candle (c1) opposite extreme | Target 1:{rr}")
+    if invert:
+        print("INVERT ON: pattern BUY → trade SELL, pattern SELL → trade BUY")
     print(f"TFs: {', '.join(tfs)} min")
     print(f"Fetch {fetch_from}→{analyze_to_s} | Analyze {analyze_from_s}→{analyze_to_s}\n")
 
@@ -306,7 +314,7 @@ def main():
                         print(f"    {day} NO DATA (bars={len(bars)})")
                     continue
                 c0, c1, c2, c3 = bars[0], bars[1], bars[2], bars[3]
-                trade = apply_signal(c0, c1, c2, c3, rr)
+                trade = apply_signal(c0, c1, c2, c3, rr, invert=invert)
                 if not trade:
                     summary.append((name, res, str(day), "NONE", "-"))
                     by_tf[res]["NONE"] += 1
@@ -326,8 +334,10 @@ def main():
                 trades_log.append((name, res, str(day), trade))
                 by_tf[res][trade["side"]] += 1
                 by_tf[res][outcome] += 1
+                pat = trade.get("pattern", "")
+                inv_tag = f" (pat={pat})" if invert else ""
                 print(
-                    f"    {day} → {trade['side']:4} @c3={hhmm(c3['t'])} "
+                    f"    {day} → {trade['side']:4}{inv_tag} @c3={hhmm(c3['t'])} "
                     f"Entry={trade['entry']:.2f} SL={trade['sl']:.2f} "
                     f"T={trade['target']:.2f} (1:{rr}) risk={trade['risk']:.2f} "
                     f"→ {outcome}" + (f" @{hhmm(exit_t)}" if exit_t and outcome != "OPEN" else "")
@@ -365,14 +375,15 @@ def main():
         op = sum(1 for *_, o in rows_s if o == "OPEN")
         print(f"{name:8} {b+se:5} {b:5} {se:5} {tg:5} {sln:5} {op:5} {tg*rr+sln*(-1):+8.1f}")
 
-    print(f"\n========== TOTALS RR=1:{rr} | {analyze_from_s}→{analyze_to_s} ==========")
+    print(f"\n========== TOTALS RR=1:{rr} | {analyze_from_s}→{analyze_to_s}"
+          f"{' | INVERT' if invert else ''} ==========")
     print(f"Signals: BUY={buys}  SELL={sells}  total={n_sig}")
     print(f"Outcomes: TARGET={tgt}  SL={sl}  OPEN={opn}  Win%={win:.1f}%")
     print(f"Net R (OPEN=0): {net_r:+.1f}R")
 
     print("\n========== DETAILED TRADES (verify) ==========")
     print(
-        f"{'#':3} {'Index':7} {'TF':4} {'Day':10} {'Side':4} "
+        f"{'#':3} {'Index':7} {'TF':4} {'Day':10} {'Pat':4} {'Side':4} "
         f"{'c1':5} {'c2':5} {'c3':5} "
         f"{'c1.H':>10} {'c1.L':>10} {'Entry':>10} {'SL':>10} {'Target':>10} {'Risk':>8} "
         f"{'Out':6} {'Exit':5} {'R':>5}"
@@ -380,7 +391,7 @@ def main():
     for i, (name, res, day, trade) in enumerate(trades_log, 1):
         r_mult = trade["rr"] if trade["outcome"] == "TARGET" else (-1.0 if trade["outcome"] == "SL" else 0.0)
         print(
-            f"{i:<3} {name:7} {res+'m':4} {day:10} {trade['side']:4} "
+            f"{i:<3} {name:7} {res+'m':4} {day:10} {trade.get('pattern','-'):4} {trade['side']:4} "
             f"{hhmm(trade['c1_t']):5} {hhmm(trade['c2_t']):5} {hhmm(trade['c3_t']):5} "
             f"{trade['c1_h']:10.2f} {trade['c1_l']:10.2f} "
             f"{trade['entry']:10.2f} {trade['sl']:10.2f} {trade['target']:10.2f} {trade['risk']:8.2f} "
