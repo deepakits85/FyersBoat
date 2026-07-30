@@ -1,0 +1,12 @@
+# Analysis scripts
+
+## four_candle_ema_multitf.py
+First-4-candle + EMA9/15 (volume OFF). Caches Fyers history under
+`FyersLoginWeb/bin/Release/net9.0/datacache/multitf/`.
+
+```bash
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py          # use cache
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force  # re-fetch
+```
+
+TFs: 3, 5, 10, 15, 20, 30 min — Nifty / Bank / Sensex.
