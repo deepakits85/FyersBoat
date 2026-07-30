@@ -2,6 +2,7 @@ Cache dir: /workspace/FyersLoginWeb/FyersLoginWeb/bin/Release/net9.0/datacache/m
 Rule: EMA failed-break | first candle ignore | EMA9+15 clear
 BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN
 EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break
+First candle fully ignored (not used as broken reference)
 Day proximity: ON 10.0%
 SL lookback=2 (+50% cap) | Target 1:3.0
 TFs: 10, 15, 20, 30 | Analyze 2026-05-01→2026-07-30

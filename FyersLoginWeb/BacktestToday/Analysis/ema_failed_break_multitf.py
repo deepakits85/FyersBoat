@@ -264,7 +264,7 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
 
 def scan_day(bars, use_day_prox, prox_pct, sl_lookback, rr):
     trades = []
-    i = 1  # ignore first candle
+    i = 2  # first candle fully ignored (not even broken reference)
     while i < len(bars):
         buy = try_signal(bars, i, True, use_day_prox, prox_pct, sl_lookback, rr)
         if buy:
@@ -323,7 +323,7 @@ def hhmm(iso):
 def main():
     force = "--force" in sys.argv
     quiet = "--quiet" in sys.argv
-    use_day_prox = "--day-prox" in sys.argv  # optional; default OFF
+    use_day_prox = "--no-day-prox" not in sys.argv  # default ON; off only when asked
     prox_pct = float(arg_val(sys.argv, "prox", "0.10"))
     sl_lookback = int(arg_val(sys.argv, "sl-lookback", "2"))
     rr = float(arg_val(sys.argv, "rr", "3"))
@@ -339,6 +339,7 @@ def main():
     print("Rule: EMA failed-break | first candle ignore | EMA9+15 clear")
     print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
     print("EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break")
+    print("First candle fully ignored (not used as broken reference)")
     print(f"Day proximity: {'ON '+str(prox_pct*100)+'%' if use_day_prox else 'OFF'}")
     print(f"SL lookback={sl_lookback} (+50% cap) | Target 1:{rr}")
     print(f"TFs: {', '.join(tfs)} | Analyze {analyze_from_s}→{analyze_to_s}\n")
