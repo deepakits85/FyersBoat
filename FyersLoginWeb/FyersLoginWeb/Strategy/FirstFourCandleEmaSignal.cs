@@ -58,7 +58,7 @@ namespace FyersLoginWeb.Strategy
         /// <summary>
         /// BUY: break c1.High → Entry=c1.High, SL=c1.Low (lowest of break candle).
         /// SELL: break c1.Low → Entry=c1.Low, SL=c1.High (highest of break candle).
-        /// Target 1:6.
+        /// Target 1:1.6.
         /// </summary>
         static FourCandleEmaTrade BuildTrade(string side, EmaCandle breakCandle, EmaCandle signalCandle)
         {
