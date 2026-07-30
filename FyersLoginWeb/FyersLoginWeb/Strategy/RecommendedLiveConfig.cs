@@ -19,7 +19,6 @@ namespace FyersLoginWeb.Strategy
         public static readonly TimeSpan[] Refs =
         {
             new TimeSpan(11, 15, 0),
-            new TimeSpan(12, 45, 0),
         };
 
         public const decimal NiftyRr = 2m;
