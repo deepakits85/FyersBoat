@@ -322,7 +322,7 @@ def hhmm(iso):
 def main():
     force = "--force" in sys.argv
     quiet = "--quiet" in sys.argv
-    use_day_prox = "--no-day-prox" not in sys.argv
+    use_day_prox = "--day-prox" in sys.argv  # optional; default OFF
     prox_pct = float(arg_val(sys.argv, "prox", "0.10"))
     sl_lookback = int(arg_val(sys.argv, "sl-lookback", "2"))
     rr = float(arg_val(sys.argv, "rr", "3"))

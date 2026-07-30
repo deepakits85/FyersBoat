@@ -255,8 +255,8 @@ namespace FyersLoginWeb.Strategy
 
     public class EmaFailedBreakConfig
     {
-        /// <summary>Require price in bottom/top DayProximityPct of day range. Default true (10%).</summary>
-        public bool UseDayProximity { get; set; } = true;
+        /// <summary>Require price in bottom/top DayProximityPct of day range. Default false (optional).</summary>
+        public bool UseDayProximity { get; set; } = false;
         public decimal DayProximityPct { get; set; } = EmaFailedBreakSignal.DefaultDayProximityPct;
         /// <summary>Prior candles for SL extreme: 1 or 2. Default 2.</summary>
         public int SlLookbackCandles { get; set; } = EmaFailedBreakSignal.DefaultSlLookback;
