@@ -94,8 +94,9 @@ def apply_signal(c0, c1, c2, c3):
     c3_red = c3["c"] < c3["o"]
     c3_green = c3["c"] > c3["o"]
 
-    above = c3["c"] > c3["ema9"] and c3["c"] > c3["ema15"]
-    below = c3["c"] < c3["ema9"] and c3["c"] < c3["ema15"]
+    # Poora c3 candle EMA se clear (wick/body touch nahi)
+    above = c3["l"] > c3["ema9"] and c3["l"] > c3["ema15"]
+    below = c3["h"] < c3["ema9"] and c3["h"] < c3["ema15"]
 
     breakout = c2["h"] > c1["h"]
     if breakout and above:

@@ -5,7 +5,7 @@ namespace FyersLoginWeb.Strategy
 {
     /// <summary>
     /// First-4-candle pattern (ignore candle[0]) + EMA9/EMA15.
-    /// Volume filter intentionally OFF (user).
+    /// Volume filter OFF. c3 wick/body must NOT touch EMA (Low&gt;EMAs / High&lt;EMAs).
     /// </summary>
     public static class FirstFourCandleEmaSignal
     {
@@ -27,8 +27,9 @@ namespace FyersLoginWeb.Strategy
             bool c3Red = c3.Close < c3.Open;
             bool c3Green = c3.Close > c3.Open;
 
-            bool aboveEMA = c3.Close > c3.Ema9 && c3.Close > c3.Ema15;
-            bool belowEMA = c3.Close < c3.Ema9 && c3.Close < c3.Ema15;
+            // Poora candle clear of EMA (wick + body touch nahi)
+            bool aboveEMA = c3.Low > c3.Ema9 && c3.Low > c3.Ema15;
+            bool belowEMA = c3.High < c3.Ema9 && c3.High < c3.Ema15;
 
             bool breakout = c2.High > c1.High;
             if (breakout && aboveEMA)
