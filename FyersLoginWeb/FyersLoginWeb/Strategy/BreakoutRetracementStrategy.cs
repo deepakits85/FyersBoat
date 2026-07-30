@@ -48,18 +48,15 @@ namespace FyersLoginWeb.Strategy
         private bool _hadFirstBreakout;
 
         /// <summary>
-        /// Effective breakout/breakdown level. PEHLA breakout ho to prior-high wala
-        /// BreakoutLevel (resistance bhi clear ho); uske baad (2nd breakout) sirf
-        /// reference High/Low.
+        /// MANUAL-style: hamesha 30m reference High/Low.
+        /// Prior-high mix nahi — warna chart pe dikhne wala breakout bot skip kar deta hai.
         /// </summary>
-        private decimal EffLevel => IsLong
-            ? (_hadFirstBreakout ? _reference!.High : _reference!.BreakoutLevel)
-            : (_hadFirstBreakout ? _reference!.Low : _reference!.BreakdownLevel);
+        private decimal EffLevel => IsLong ? _reference!.High : _reference!.Low;
 
-        /// <summary>Entry cap (worst acceptable): long = EffLevel+buf, short = EffLevel-buf.</summary>
+        /// <summary>Entry @ reference High/Low (+ buffer).</summary>
         public decimal EntryCapPrice => IsLong
-            ? EffLevel + _config.EntryBufferPoints
-            : EffLevel - _config.EntryBufferPoints;
+            ? _reference!.High + _config.EntryBufferPoints
+            : _reference!.Low - _config.EntryBufferPoints;
 
         public BreakoutRetracementStrategy(StrategyConfig? config = null, TradeSide side = TradeSide.Long)
         {
@@ -121,8 +118,8 @@ namespace FyersLoginWeb.Strategy
                     State = State,
                     JustConfirmed = StrategyState.FirstBreakoutConfirmed,
                     Message = IsLong
-                        ? $"FIRST_BREAKOUT: 3m High {c.High} > level {EffLevel} (prior high included). Ab retracement (neeche)."
-                        : $"FIRST_BREAKDOWN: 3m Low {c.Low} < level {EffLevel} (prior low included). Ab retracement (upar)."
+                        ? $"FIRST_BREAKOUT: 3m High {c.High} > refHigh {EffLevel}. Ab retracement (neeche)."
+                        : $"FIRST_BREAKDOWN: 3m Low {c.Low} < refLow {EffLevel}. Ab retracement (upar)."
                 };
             }
 
@@ -195,8 +192,7 @@ namespace FyersLoginWeb.Strategy
                 _retracementTime = c.StartTime;
             }
 
-            // EffLevel: agar cycle ka pehla breakout abhi tak nahi hua (retracement-first path)
-            // to prior-high wala level; warna sirf reference high.
+            // Confirm + entry level = reference High/Low (manual chart jaisa).
             decimal lvl = EffLevel;
             bool breached = IsLong ? c.High > lvl : c.Low < lvl;
             if (breached)
@@ -215,47 +211,34 @@ namespace FyersLoginWeb.Strategy
 
                 decimal cap = EntryCapPrice;
 
-                // Close-confirm KAB zaroori:
-                //  - RequireCloseConfirm=true -> hamesha
-                //  - ConfirmRetrFirstOnly=true -> SIRF retracement-first (koi asli pehla breakout
-                //    nahi hua, _hadFirstBreakout=false) — is case prior-high breakout + candle-close
-                //    dono chahiye (user rule). Normal setup me wick (turant) theek.
                 bool needConfirm = _config.RequireCloseConfirm
                     || (_config.ConfirmRetrFirstOnly && !_hadFirstBreakout);
                 if (!needConfirm)
                     return GenerateSignal(c, cap);
 
-                // CONFIRMED: close breach hold nahi hua -> wait (jhoothe wick filter)
                 bool holdFailed = IsLong ? c.Close < lvl : c.Close > lvl;
                 if (holdFailed)
                     return Info(IsLong
-                        ? $"Breakout wick par Close {c.Close} < level {lvl}. Valid close ka intezaar."
-                        : $"Breakdown wick par Close {c.Close} > level {lvl}. Valid close ka intezaar.");
+                        ? $"Breakout wick par Close {c.Close} < refHigh {lvl}. Valid close ka intezaar."
+                        : $"Breakdown wick par Close {c.Close} > refLow {lvl}. Valid close ka intezaar.");
 
-                // Entry = REFERENCE candle high/low (cap), chase nahi.
-                // Close-confirm ke baad bhi fill price = ref High (long) / ref Low (short).
                 bool canFillNow = IsLong ? c.Low <= cap : c.High >= cap;
                 if (canFillNow)
                     return GenerateSignal(c, cap);
 
-                // gap: poori candle cap ke paar khul gayi -> pullback ka intezaar (ref high pe entry)
                 State = StrategyState.WaitingForEntry;
                 return new StrategyResult
                 {
                     State = State,
                     JustConfirmed = StrategyState.SecondBreakoutConfirmed,
                     Message = IsLong
-                        ? $"SECOND_BREAKOUT: candle cap ({cap}) se upar gap. Pullback ka intezaar."
-                        : $"SECOND_BREAKDOWN: candle cap ({cap}) se neeche gap. Pullback ka intezaar."
+                        ? $"SECOND_BREAKOUT CLOSE-OK vs refHigh {lvl}; candle cap se upar gap. Pullback wait."
+                        : $"SECOND_BREAKDOWN CLOSE-OK vs refLow {lvl}; candle cap se neeche gap. Pullback wait."
                 };
             }
-            // NOTE: actual threshold EffLevel hai (retracement-first me prior-high resistance
-            // bhi shaamil), sirf reference High/Low nahi — isliye EffLevel dikhao warna bhraam hota hai.
-            bool priorIncluded = !_hadFirstBreakout && EffLevel != (IsLong ? _reference!.High : _reference!.Low);
-            string priorNote = priorIncluded ? " (prior-high resistance included)" : "";
             return Info(IsLong
-                ? $"Waiting 2nd breakout: 3m High {c.High} <= level {EffLevel}{priorNote}."
-                : $"Waiting 2nd breakdown: 3m Low {c.Low} >= level {EffLevel}{priorNote}.");
+                ? $"Waiting 2nd breakout: 3m High {c.High} <= refHigh {lvl}."
+                : $"Waiting 2nd breakdown: 3m Low {c.Low} >= refLow {lvl}.");
         }
 
         // Step 4: price pullback me entry-zone tak aaya? to entry

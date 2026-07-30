@@ -56,7 +56,8 @@ namespace FyersLoginWeb.Strategy
                 RequireCloseConfirm = true,
                 ConfirmRetrFirstOnly = false,
                 UseRetracementFirst = true,
-                UsePriorLevelBreak = true,
+                // Manual-match: breakout/entry = ref High only (prior-high OFF)
+                UsePriorLevelBreak = false,
             };
             cfg.SetRetracementFromPercentage(50m);
             return cfg;
