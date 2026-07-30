@@ -647,21 +647,14 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             decimal useRr = rrOverride ?? leg.RR;
             if (rrSensex != null && leg.Code == "sensex")
                 useRr = rrSensex.Value;
-            var config = new StrategyConfig
-            {
-                EntryBufferPoints = 0m,
-                StopLossBufferPoints = 0m,
-                RiskRewardRatio = useRr,
-                UseTrailing = trailing,
-                UseSquareOff = true,
-                UseReferenceMaxWait = refWait
-            };
+            var config = RecommendedLiveConfig.MakeConfig(useRr);
+            config.UseTrailing = trailing;
+            config.UseReferenceMaxWait = refWait;
             if ((rrOverride != null || (rrSensex != null && leg.Code == "sensex")) && useRr < 2m)
             {
                 config.TrailActivateRR = 2m;
                 config.TrailTargetRR = 2.5m;
             }
-            config.SetRetracementFromPercentage(50m);
 
             foreach (var rs in refs)
             {
