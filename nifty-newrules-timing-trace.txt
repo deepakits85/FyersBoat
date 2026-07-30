@@ -1,0 +1,122 @@
+/workspace/FyersLoginWeb/FyersLoginWeb/Services/LiveTradingService.cs(208,34): warning CS0162: Unreachable code detected [/workspace/FyersLoginWeb/FyersLoginWeb/FyersLoginWeb.csproj]
+/workspace/FyersLoginWeb/FyersLoginWeb/Services/Broker/PositionManager.cs(142,31): warning CS0162: Unreachable code detected [/workspace/FyersLoginWeb/FyersLoginWeb/FyersLoginWeb.csproj]
+/tmp/TraceNifty/Program.cs(60,21): warning CS8602: Dereference of a possibly null reference. [/tmp/TraceNifty/TraceNifty.csproj]
+
+========== 2026-07-24 Nifty index candles=125 ==========
+
+--- ref 11:15 monitor@11:45 spotOpen=23682.25 ATM~23700 ---
+  NSE:NIFTY26JUL23700CE candles=125
+    11:45-11:48  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 134.3 > level 128.9 (prior high included). Ab retracement (neeche).
+    12:03-12:06  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 146.3 > level 128.9 (prior high included). Ab retracement (neeche).
+    12:21-12:24  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 150.85 > level 128.9 (prior high included). Ab retracement (neeche).
+    12:39-12:42  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 191.95 > level 128.9 (prior high included). Ab retracement (neeche).
+    12:57-13:00  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 206.3 > level 128.9 (prior high included). Ab retracement (neeche).
+    13:15-13:18  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 189.1 > level 128.9 (prior high included). Ab retracement (neeche).
+    13:33-13:36  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 179.0 > level 128.9 (prior high included). Ab retracement (neeche).
+    13:51-13:54  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 182.15 > level 128.9 (prior high included). Ab retracement (neeche).
+    14:09-14:12  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 201.25 > level 128.9 (prior high included). Ab retracement (neeche).
+    14:27-14:30  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 182.6 > level 128.9 (prior high included). Ab retracement (neeche).
+    14:45-14:48  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 180.85 > level 128.9 (prior high included). Ab retracement (neeche).
+    15:03-15:06  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 167.75 > level 128.9 (prior high included). Ab retracement (neeche).
+    15:21-15:24  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 188.0 > level 128.9 (prior high included). Ab retracement (neeche).
+    (no entry)
+  NSE:NIFTY26JUL23700PE candles=125
+    11:45-11:48  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 114.7 <= level 137.625 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+
+--- ref 12:45 monitor@13:15 spotOpen=23783.75 ATM~23800 ---
+  NSE:NIFTY26JUL23800CE candles=125
+    13:15-13:18  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 119.7 <= level 132.425 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+  NSE:NIFTY26JUL23800PE candles=125
+    13:15-13:18  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 114.05 <= level 114.175 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+
+========== 2026-07-23 Nifty index candles=125 ==========
+
+--- ref 11:15 monitor@11:45 spotOpen=23948.55 ATM~23950 ---
+  NSE:NIFTY26JUL23950CE candles=125
+    11:45-11:48  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 127.55 <= level 135.000 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+  NSE:NIFTY26JUL23950PE candles=125
+    11:51-11:54  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 141.6 > level 136.35 (prior high included). Ab retracement (neeche).
+    12:00-12:03  [RetracementConfirmed]  RETRACEMENT: 3m Low 121.95 <= level 127.325. Ab 2nd breakout.
+    12:12-12:15  [SecondBreakoutConfirmed]  SECOND_BREAKOUT CLOSE-OK (Close 138.25 > 136.35). Ab NEXT candles pe entry @ refHigh/cap 136.35 ka wait.
+    12:15-12:18  [BuySignal]  BUY @ 136.35 | SL 127.325 | Target 154.400 (1:2) | Risk 9.025.
+    >>> ENTRY 12:15:00 candle 12:15-12:18 @ 136.35 SL 127.325 T 154.400
+        refHigh=136.35 outcome=TargetHit R=2.00 exit=12:30:00
+        closeConfirm @ 12:15:00 (bar 12:12-12:15) -> then wait entry level on LATER bars
+
+--- ref 12:45 monitor@13:15 spotOpen=23832.45 ATM~23850 ---
+  NSE:NIFTY26JUL23850CE candles=125
+    13:15-13:18  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 115.0 <= level 127.40 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+  NSE:NIFTY26JUL23850PE candles=125
+    13:15-13:18  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 160.0 > level 148.5 (prior high included). Ab retracement (neeche).
+    13:21-13:24  [RetracementConfirmed]  RETRACEMENT: 3m Low 139.0 <= level 139.875. Ab 2nd breakout.
+    (no entry)
+
+========== 2026-07-22 Nifty index candles=125 ==========
+
+--- ref 11:15 monitor@11:45 spotOpen=24046.80 ATM~24050 ---
+  CE: no option cache near ATM
+  NSE:NIFTY26JUL24050PE candles=125
+    11:45-11:48  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 162.45 <= level 172.725 (breakout se pehle). Ab breakout hi BUY dega.
+    12:21-12:24  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 211.05 > level 185.4 (prior high included). Ab retracement (neeche).
+    12:39-12:42  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 219.0 > level 185.4 (prior high included). Ab retracement (neeche).
+    13:00-13:03  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 199.55 > level 185.4 (prior high included). Ab retracement (neeche).
+    13:18-13:21  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 210.3 > level 185.4 (prior high included). Ab retracement (neeche).
+    13:42-13:45  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 201.25 > level 185.4 (prior high included). Ab retracement (neeche).
+    14:00-14:03  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 209.35 > level 185.4 (prior high included). Ab retracement (neeche).
+    14:18-14:21  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 202.05 > level 185.4 (prior high included). Ab retracement (neeche).
+    14:36-14:39  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 200.9 > level 185.4 (prior high included). Ab retracement (neeche).
+    14:54-14:57  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 201.6 > level 185.4 (prior high included). Ab retracement (neeche).
+    (no entry)
+
+--- ref 12:45 monitor@13:15 spotOpen=23980.45 ATM~24000 ---
+  CE: no option cache near ATM
+  NSE:NIFTY26JUL24000PE candles=125
+    13:30-13:33  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 168.55 <= level 169.350 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)
+
+========== 2026-07-21 Nifty index candles=125 ==========
+
+--- ref 11:15 monitor@11:45 spotOpen=24162.65 ATM~24150 ---
+  CE: no option cache near ATM
+  PE: no option cache near ATM
+
+--- ref 12:45 monitor@13:15 spotOpen=24152.20 ATM~24150 ---
+  CE: no option cache near ATM
+  PE: no option cache near ATM
+
+========== 2026-07-20 Nifty index candles=125 ==========
+
+--- ref 11:15 monitor@11:45 spotOpen=24196.45 ATM~24200 ---
+  NSE:NIFTY26JUL24200CE candles=125
+    11:45-11:48  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 173.4 <= level 182.50 (breakout se pehle). Ab breakout hi BUY dega.
+    13:21-13:24  [SecondBreakoutConfirmed]  SECOND_BREAKOUT CLOSE-OK (Close 204.35 > 196.55). Ab NEXT candles pe entry @ refHigh/cap 196.55 ka wait.
+    13:24-13:27  [BuySignal]  BUY @ 196.55 | SL 182.50 | Target 224.65 (1:2) | Risk 14.05.
+    (no entry)
+  NSE:NIFTY26JUL24200PE candles=125
+    11:45-11:48  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 205.7 > level 204.4 (prior high included). Ab retracement (neeche).
+    12:03-12:06  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 214.5 > level 204.4 (prior high included). Ab retracement (neeche).
+    12:21-12:24  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 206.9 > level 204.4 (prior high included). Ab retracement (neeche).
+    12:39-12:42  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 215.0 > level 204.4 (prior high included). Ab retracement (neeche).
+    12:57-13:00  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 209.65 > level 204.4 (prior high included). Ab retracement (neeche).
+    13:12-13:15  [RetracementConfirmed]  RETRACEMENT: 3m Low 169.15 <= level 196.70. Ab 2nd breakout.
+    (no entry)
+
+--- ref 12:45 monitor@13:15 spotOpen=24224.75 ATM~24200 ---
+  NSE:NIFTY26JUL24200CE candles=125
+    13:15-13:18  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 206.6 > level 197.85 (prior high included). Ab retracement (neeche).
+    13:33-13:36  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 209.2 > level 197.85 (prior high included). Ab retracement (neeche).
+    13:51-13:54  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 213.9 > level 197.85 (prior high included). Ab retracement (neeche).
+    14:09-14:12  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 221.95 > level 197.85 (prior high included). Ab retracement (neeche).
+    14:27-14:30  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 222.0 > level 197.85 (prior high included). Ab retracement (neeche).
+    14:45-14:48  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 213.85 > level 197.85 (prior high included). Ab retracement (neeche).
+    15:03-15:06  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 210.4 > level 197.85 (prior high included). Ab retracement (neeche).
+    15:21-15:24  [FirstBreakoutConfirmed]  FIRST_BREAKOUT: 3m High 212.85 > level 197.85 (prior high included). Ab retracement (neeche).
+    (no entry)
+  NSE:NIFTY26JUL24200PE candles=125
+    13:15-13:18  [RetracementConfirmed]  RETRACEMENT-first: 3m Low 163.3 <= level 201.775 (breakout se pehle). Ab breakout hi BUY dega.
+    (no entry)

@@ -1,0 +1,79 @@
+@model FyersLoginWeb.Models.StrategyOptionsViewModel
+@{
+    ViewData["Title"] = "Strategy — Options";
+}
+
+<h2>Options Backtest — strategy on option chart (ATM, monthly)</h2>
+<p class="text-muted">CE = bullish long, PE = bearish long. Strike = ATM (entry ke spot se). SL/target option premium pe. Period: <b>@Model.Period</b></p>
+
+@if (Model.Error != null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+    @if (Model.Error.Contains("login"))
+    {
+        <a class="btn btn-warning" asp-controller="Auth" asp-action="Index">Go to Login</a>
+    }
+}
+else
+{
+    <table class="table table-bordered text-center align-middle" style="max-width:1000px;">
+        <thead class="table-light">
+            <tr><th>Leg</th><th>Days</th><th>Trades</th><th class="text-success">Target</th>
+                <th class="text-danger">SL</th><th class="text-primary">Sq-off</th><th>Open</th><th>Win%</th><th>Net R</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Model.Legs)
+            {
+                <tr>
+                    <td class="text-start"><b>@l.Name</b></td>
+                    <td>@l.Days</td><td>@l.Trades</td>
+                    <td class="text-success">@l.Target</td>
+                    <td class="text-danger">@l.SL</td>
+                    <td class="text-primary">@l.TimeExit @(l.TimeExit > 0 ? $"({l.TimeExitR:+0.0;-0.0}R)" : "")</td>
+                    <td>@l.Open</td><td>@l.WinRate</td>
+                    <td class="fw-bold @(l.NetR >= 0 ? "text-success" : "text-danger")">@l.NetR</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot class="table-secondary fw-bold">
+            <tr>
+                <td class="text-start">TOTAL</td><td>-</td><td>@Model.TotalTrades</td>
+                <td class="text-success">@Model.TotalTarget</td>
+                <td class="text-danger">@Model.TotalSL</td>
+                <td class="text-primary">@Model.TotalTimeExit</td>
+                <td>@Model.TotalOpen</td><td>-</td>
+                <td class="@(Model.TotalNetR >= 0 ? "text-success" : "text-danger")">@Model.TotalNetR</td>
+            </tr>
+        </tfoot>
+    </table>
+    <p class="text-muted" style="font-size:0.85rem;">Net R = (Target × RR) − SL + Sq-off ka actual R. <b>Sq-off</b> = 2:45 par force-close (2:45 ke baad koi entry nahi). Har trade option ke apne chart pe.</p>
+
+    <h5 class="mt-4">Trade Detail (@Model.Trades.Count)</h5>
+    <div style="overflow-x:auto;">
+        <table class="table table-sm table-bordered" style="min-width:900px;">
+            <thead class="table-light">
+                <tr><th>Date</th><th>Option</th><th>Side</th><th>Entry</th><th>Entry ₹</th>
+                    <th>SL</th><th>Target</th><th>Outcome</th><th>P&amp;L (pts)</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var tr in Model.Trades)
+                {
+                    string cls = tr.Outcome == "TargetHit" ? "table-success"
+                               : tr.Outcome == "StopLossHit" ? "table-danger"
+                               : tr.Outcome == "TimeExit" ? "table-primary" : "table-warning";
+                    <tr class="@cls">
+                        <td>@tr.Date</td>
+                        <td style="font-size:0.8rem;">@tr.Symbol</td>
+                        <td>@tr.Side</td>
+                        <td>@tr.EntryTime</td>
+                        <td>@tr.EntryPrem</td>
+                        <td>@tr.SL</td>
+                        <td>@tr.Target</td>
+                        <td>@tr.Outcome</td>
+                        <td class="@(tr.PnlPts >= 0 ? "text-success" : "text-danger")">@tr.PnlPts</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
