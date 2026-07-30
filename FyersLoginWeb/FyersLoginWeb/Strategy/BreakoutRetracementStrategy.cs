@@ -258,7 +258,7 @@ namespace FyersLoginWeb.Strategy
                 State = State,
                 JustConfirmed = StrategyState.BuySignal,
                 Signal = signal,
-                Message = $"{(IsLong ? "BUY" : "SELL")} @ {entry} | SL {sl} (50% struct) | T {target} (1:{_config.RiskRewardRatio})"
+                Message = $"{(IsLong ? "BUY" : "SELL")} @ {entry} | SL {sl} (ref extreme) | T {target} (1:{_config.RiskRewardRatio})"
             };
         }
 
