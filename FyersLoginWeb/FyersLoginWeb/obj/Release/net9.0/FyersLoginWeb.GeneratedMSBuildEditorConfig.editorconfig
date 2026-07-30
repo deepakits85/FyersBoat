@@ -1,0 +1,81 @@
+is_global = true
+build_property.TargetFramework = net9.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = FyersLoginWeb
+build_property.RootNamespace = FyersLoginWeb
+build_property.ProjectDir = /workspace/FyersLoginWeb/FyersLoginWeb/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 9.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = /workspace/FyersLoginWeb/FyersLoginWeb
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 9.0
+build_property.EnableCodeStyleSeverity = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Auth/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvQXV0aC9JbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Home/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvSG9tZS9JbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Home/Privacy.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvSG9tZS9Qcml2YWN5LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Shared/Error.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU2hhcmVkL0Vycm9yLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Shared/_ValidationScriptsPartial.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU2hhcmVkL19WYWxpZGF0aW9uU2NyaXB0c1BhcnRpYWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/AllRefs.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvQWxsUmVmcy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Dashboard.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvRGFzaGJvYXJkLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Day.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvRGF5LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Month.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvTW9udGguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Options.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvT3B0aW9ucy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Portfolio.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvUG9ydGZvbGlvLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Strategy/Weekday.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU3RyYXRlZ3kvV2Vla2RheS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/_ViewImports.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvX1ZpZXdJbXBvcnRzLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/_ViewStart.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvX1ZpZXdTdGFydC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/workspace/FyersLoginWeb/FyersLoginWeb/Views/Shared/_Layout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3MvU2hhcmVkL19MYXlvdXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = b-ecd8mc01tw

@@ -11,8 +11,8 @@ namespace FyersLoginWeb.Strategy
     /// Entry model: Close confirm @ EffLevel, SAME candle pe fill agar Low&lt;=cap
     /// (sirf gap hone pe pullback wait). "Next-bar @ refHigh only" R&amp;D pe haar gaya (~+1R).
     ///
-    /// Nifty + BankNifty, refs 11:15 + 12:45 (10:45 filter-skip), RR 1:2,
-    /// 90m wait ON, strict filters, trail ON.
+    /// Nifty only, ref 11:15 only, RR 1:2, 90m wait ON, trail ON.
+    /// Breakout/entry = reference High (manual match). Prior-high OFF.
     /// </summary>
     public static class RecommendedLiveConfig
     {
@@ -22,7 +22,7 @@ namespace FyersLoginWeb.Strategy
         };
 
         public const decimal NiftyRr = 2m;
-        public const decimal BankRr = 2m;
+        public const decimal BankRr = 2m; // unused when Bank leg off
         public const decimal StrikeStepNifty = 50m;
         public const decimal StrikeStepBank = 100m;
 
@@ -34,8 +34,9 @@ namespace FyersLoginWeb.Strategy
 
         public static TimeSpan SquareOffTime { get; } = new TimeSpan(14, 45, 0);
 
+        /// <summary>R&amp;D: filters off — user ne skip mat karo kaha.</summary>
         public static EntryFilterConfig EntryFilters()
-            => EntryFilterConfig.ReduceStopLossStrictPreset();
+            => new EntryFilterConfig();
 
         public static StrategyConfig MakeConfig(decimal riskReward)
         {

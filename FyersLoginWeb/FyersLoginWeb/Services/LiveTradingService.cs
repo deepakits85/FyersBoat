@@ -46,8 +46,7 @@ namespace FyersLoginWeb.Services
         private record Leg(string Index, string OptRoot, decimal RR, decimal Step, int Priority);
         private static readonly Leg[] Legs =
         {
-            new("NSE:NIFTY50-INDEX",   "NSE:NIFTY",     RecommendedLiveConfig.NiftyRr, RecommendedLiveConfig.StrikeStepNifty, 0),
-            new("NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", RecommendedLiveConfig.BankRr,  RecommendedLiveConfig.StrikeStepBank,  1),
+            new("NSE:NIFTY50-INDEX", "NSE:NIFTY", RecommendedLiveConfig.NiftyRr, RecommendedLiveConfig.StrikeStepNifty, 0),
         };
 
         public LiveTradingService(IServiceScopeFactory scopeFactory, ILogger<LiveTradingService> log,
