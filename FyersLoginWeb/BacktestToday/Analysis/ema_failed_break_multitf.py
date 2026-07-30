@@ -8,6 +8,9 @@ Rules (Bank 15m 5-Jun BUY style only):
          prior High broken by GREEN candle → next candle RED → entry on that close
   - SELL: clear above both EMAs (break + entry), optional near day-high;
          prior Low broken by RED candle → next candle GREEN → entry on that close
+  - Day proximity uses day H/L through the BREAK candle only (pre-entry).
+    Entry cannot invent its own day-low/high to fake the 10% filter (Bank Jun5:
+    day-low already set on broken 13:30 before entry 14:00).
   - No entry after 14:45 IST
   - Ignore 2nd consecutive high/low break (broken candle itself already broke prior)
   - SL: min/max of prior 1–2 candles; if risk > 50% of candle just before broken → cap to 50%
@@ -223,14 +226,18 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
         if not (clear_above(entry_bar, entry_bar["ema9"]) and clear_above(entry_bar, entry_bar["ema15"])):
             return None
 
-    day_hi, day_lo = day_range(bars, entry_idx)
+    # Pre-entry day range (through break). Entry wick must not define day extreme.
+    day_hi, day_lo = day_range(bars, break_idx)
     day_rng = day_hi - day_lo
     if use_day_prox and day_rng > 0:
         if is_buy:
-            if (entry_bar["c"] - day_lo) / day_rng > prox_pct:
+            prox = (entry_bar["c"] - day_lo) / day_rng
+            # Must sit in bottom 10% of already-established range (not below it)
+            if prox < 0 or prox > prox_pct:
                 return None
         else:
-            if (day_hi - entry_bar["c"]) / day_rng > prox_pct:
+            prox = (day_hi - entry_bar["c"]) / day_rng
+            if prox < 0 or prox > prox_pct:
                 return None
 
     entry = entry_bar["c"]
@@ -340,7 +347,7 @@ def main():
     print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
     print("EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break")
     print("First candle fully ignored (not used as broken reference)")
-    print(f"Day proximity: {'ON '+str(prox_pct*100)+'%' if use_day_prox else 'OFF'}")
+    print(f"Day proximity: {'ON '+str(prox_pct*100)+'% (pre-entry / through break)' if use_day_prox else 'OFF'}")
     print(f"SL lookback={sl_lookback} (+50% cap) | Target 1:{rr}")
     print(f"TFs: {', '.join(tfs)} | Analyze {analyze_from_s}→{analyze_to_s}\n")
 

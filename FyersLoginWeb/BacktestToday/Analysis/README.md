@@ -5,6 +5,7 @@ EMA failed-break (Bank 15m 5-Jun style). First candle fully ignored.
 BUY: green High-break → next red | SELL: red Low-break → next green.
 EMA clear on break+entry | no entry after 14:45 | skip 2nd consecutive break.
 **Day proximity 10% ON by default** (`--no-day-prox` only when asked).
+Day H/L measured **through the break candle only** (pre-entry) so entry cannot fake near day-low/high.
 SL prior 1–2 + 50% cap | Target 1:3.
 
 ```bash

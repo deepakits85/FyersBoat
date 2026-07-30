@@ -10,6 +10,7 @@ namespace FyersLoginWeb.Strategy
     ///   prior High broken by a GREEN candle → next candle must be RED → entry on that close.
     ///   Break + entry clear of EMA. No entry after 14:45.
     ///   Ignore if broken candle itself already broke prior high/low (2nd consecutive break).
+    ///   Day proximity uses H/L through break only (pre-entry) — entry cannot fake day extreme.
     /// SELL (above both EMAs, optional near day-high):
     ///   prior Low broken by a RED candle → next candle must be GREEN → entry on that close.
     ///
@@ -123,19 +124,23 @@ namespace FyersLoginWeb.Strategy
                     return null;
             }
 
-            var (dayHigh, dayLow) = DayRange(bars, entryIdx);
+            // Pre-entry day range (through break). Entry cannot invent day-low/high
+            // to fake proximity — Bank Jun5 day-low was already set before entry.
+            var (dayHigh, dayLow) = DayRange(bars, breakIdx);
             decimal dayRange = dayHigh - dayLow;
             if (cfg.UseDayProximity && dayRange > 0m)
             {
                 if (isBuy)
                 {
-                    // bottom 10% of day range
-                    if ((entryBar.Close - dayLow) / dayRange > cfg.DayProximityPct)
+                    // bottom 10% of already-established day range
+                    decimal prox = (entryBar.Close - dayLow) / dayRange;
+                    if (prox < 0m || prox > cfg.DayProximityPct)
                         return null;
                 }
                 else
                 {
-                    if ((dayHigh - entryBar.Close) / dayRange > cfg.DayProximityPct)
+                    decimal prox = (dayHigh - entryBar.Close) / dayRange;
+                    if (prox < 0m || prox > cfg.DayProximityPct)
                         return null;
                 }
             }
