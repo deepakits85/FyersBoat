@@ -171,8 +171,8 @@ def main():
                     f"    {day} → {(sig or 'NONE'):4} @c3={t3} "
                     f"c2={'G' if c2['c']>c2['o'] else 'R'} c3={'G' if c3['c']>c3['o'] else 'R'} "
                     f"BO={c2['h']>c1['h']} BD={c2['l']<c1['l']} "
-                    f"above={c3['c']>c3['ema9'] and c3['c']>c3['ema15']} "
-                    f"below={c3['c']<c3['ema9'] and c3['c']<c3['ema15']}"
+                    f"above={c3['l']>c3['ema9'] and c3['l']>c3['ema15']} "
+                    f"below={c3['h']<c3['ema9'] and c3['h']<c3['ema15']}"
                 )
 
     print("\n========== SIGNAL MATRIX (week) ==========")
