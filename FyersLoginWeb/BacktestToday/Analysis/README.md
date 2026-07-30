@@ -1,7 +1,8 @@
 # Analysis scripts
 
 ## four_candle_ema_multitf.py
-First-4-candle + EMA9/15 (volume OFF). Caches Fyers history under
+First-4-candle + EMA9/15 (volume OFF). c3 O/H/L/C must all clear EMA
+(no wick or body touch). Caches Fyers history under
 `FyersLoginWeb/bin/Release/net9.0/datacache/multitf/`.
 
 ```bash

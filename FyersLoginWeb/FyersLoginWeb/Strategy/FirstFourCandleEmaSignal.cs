@@ -5,7 +5,7 @@ namespace FyersLoginWeb.Strategy
 {
     /// <summary>
     /// First-4-candle pattern (ignore candle[0]) + EMA9/EMA15.
-    /// Volume filter OFF. c3 wick/body must NOT touch EMA (Low&gt;EMAs / High&lt;EMAs).
+    /// Volume filter OFF. c3 Open/High/Low/Close — wick ya body — EMA touch nahi.
     /// </summary>
     public static class FirstFourCandleEmaSignal
     {
@@ -27,9 +27,9 @@ namespace FyersLoginWeb.Strategy
             bool c3Red = c3.Close < c3.Open;
             bool c3Green = c3.Close > c3.Open;
 
-            // Poora candle clear of EMA (wick + body touch nahi)
-            bool aboveEMA = c3.Low > c3.Ema9 && c3.Low > c3.Ema15;
-            bool belowEMA = c3.High < c3.Ema9 && c3.High < c3.Ema15;
+            // O/H/L/C sab EMA9 + EMA15 se clear — wick/body kuchh bhi touch nahi
+            bool aboveEMA = ClearAbove(c3, c3.Ema9) && ClearAbove(c3, c3.Ema15);
+            bool belowEMA = ClearBelow(c3, c3.Ema9) && ClearBelow(c3, c3.Ema15);
 
             bool breakout = c2.High > c1.High;
             if (breakout && aboveEMA)
@@ -55,6 +55,14 @@ namespace FyersLoginWeb.Strategy
 
             return "";
         }
+
+        /// <summary>Poora candle EMA ke upar — Open, High, Low, Close sab &gt; ema.</summary>
+        public static bool ClearAbove(EmaCandle c, decimal ema) =>
+            c.Open > ema && c.High > ema && c.Low > ema && c.Close > ema;
+
+        /// <summary>Poora candle EMA ke neeche — Open, High, Low, Close sab &lt; ema.</summary>
+        public static bool ClearBelow(EmaCandle c, decimal ema) =>
+            c.Open < ema && c.High < ema && c.Low < ema && c.Close < ema;
 
         public static void AttachEma(List<EmaCandle> series)
         {

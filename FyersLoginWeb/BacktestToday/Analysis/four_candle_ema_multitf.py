@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 First-4-candle + EMA9/15 signal checker (VOLUME OFF).
+c3 Open/High/Low/Close must all be clear of EMA9 and EMA15 (no wick/body touch).
 Caches Fyers history locally; runs 3/5/10/15/20/30 min TFs.
 """
 from __future__ import annotations
@@ -87,6 +88,16 @@ def ema(vals, period):
     return out
 
 
+def clear_above(c, ema):
+    """O/H/L/C sab > ema — wick ya body touch nahi."""
+    return c["o"] > ema and c["h"] > ema and c["l"] > ema and c["c"] > ema
+
+
+def clear_below(c, ema):
+    """O/H/L/C sab < ema — wick ya body touch nahi."""
+    return c["o"] < ema and c["h"] < ema and c["l"] < ema and c["c"] < ema
+
+
 def apply_signal(c0, c1, c2, c3):
     """Volume removed. Same color/EMA/breakout logic as user code."""
     c2_red = c2["c"] < c2["o"]
@@ -94,9 +105,9 @@ def apply_signal(c0, c1, c2, c3):
     c3_red = c3["c"] < c3["o"]
     c3_green = c3["c"] > c3["o"]
 
-    # Poora c3 candle EMA se clear (wick/body touch nahi)
-    above = c3["l"] > c3["ema9"] and c3["l"] > c3["ema15"]
-    below = c3["h"] < c3["ema9"] and c3["h"] < c3["ema15"]
+    # Poora c3: Open/High/Low/Close EMA9+EMA15 se clear
+    above = clear_above(c3, c3["ema9"]) and clear_above(c3, c3["ema15"])
+    below = clear_below(c3, c3["ema9"]) and clear_below(c3, c3["ema15"])
 
     breakout = c2["h"] > c1["h"]
     if breakout and above:
@@ -137,7 +148,7 @@ def main():
     cid, access = load_auth()
 
     print(f"Cache dir: {CACHE}")
-    print("Rule: first-4 candle (ignore c0) + EMA9/15 | VOLUME OFF")
+    print("Rule: first-4 candle (ignore c0) + EMA9/15 | VOLUME OFF | c3 OHLC clear of EMA")
     print(f"TFs: {', '.join(TFS)} min | Range lookback {d0}→{d1}\n")
 
     summary = []  # (name, tf, day, sig)
@@ -167,12 +178,13 @@ def main():
                 sig = apply_signal(c0, c1, c2, c3)
                 summary.append((name, res, str(day), sig or "NONE"))
                 t3 = datetime.fromisoformat(c3["t"]).strftime("%H:%M")
+                above = clear_above(c3, c3["ema9"]) and clear_above(c3, c3["ema15"])
+                below = clear_below(c3, c3["ema9"]) and clear_below(c3, c3["ema15"])
                 print(
                     f"    {day} → {(sig or 'NONE'):4} @c3={t3} "
                     f"c2={'G' if c2['c']>c2['o'] else 'R'} c3={'G' if c3['c']>c3['o'] else 'R'} "
                     f"BO={c2['h']>c1['h']} BD={c2['l']<c1['l']} "
-                    f"above={c3['l']>c3['ema9'] and c3['l']>c3['ema15']} "
-                    f"below={c3['h']<c3['ema9'] and c3['h']<c3['ema15']}"
+                    f"above={above} below={below}"
                 )
 
     print("\n========== SIGNAL MATRIX (week) ==========")
