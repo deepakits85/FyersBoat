@@ -35,7 +35,7 @@ string rrArg = GetArg("--rr", ""); // optional override e.g. 1 or 2 (all legs sa
 decimal? rrOverride = string.IsNullOrEmpty(rrArg) ? null : decimal.Parse(rrArg, CultureInfo.InvariantCulture);
 string rrSensexArg = GetArg("--rr-sensex", ""); // Sensex-only RR override (e.g. 4)
 decimal? rrSensex = string.IsNullOrEmpty(rrSensexArg) ? null : decimal.Parse(rrSensexArg, CultureInfo.InvariantCulture);
-var refs = GetArg("--refs", "10:45,11:15,12:45")
+var refs = GetArg("--refs", "10:45,11:15")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
     .ToList();
@@ -506,6 +506,16 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
     for (int i = 0; i < raw.Count; i++)
         if (!decisions[cands[i]].Skipped) taken.Add(raw[i]);
 
+    taken = RecommendedLiveConfig.Skip1115If1045Running(
+        taken,
+        t => t.Name,
+        t => t.Sig.Reference.StartTime.TimeOfDay,
+        t => t.Sig.EntryTime,
+        t => t.Sig.OutcomeTime ?? t.Sig.EntryTime.Date.AddHours(15).AddMinutes(30));
+
+    // also apply to RAW display consistency for summary that uses raw - keep raw as signals, taken filtered
+    Console.WriteLine($"Ref rule (skip 11:15 if 10:45 open): TAKEN now {taken.Count}");
+
     Console.WriteLine("\n--- MONTHLY TAKEN ---");
     Console.WriteLine($"{"Month",-10}{"#",5}{"NetR",8}{"Win%",6}{"Tgt",5}{"SL",5}{"Trail",6}{"SqOff",6}");
     foreach (var g in taken.GroupBy(t => t.Sig.EntryTime.ToString("yyyy-MM")).OrderBy(x => x.Key))
@@ -740,7 +750,13 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
 
     int before = survivors.Count;
     survivors = survivors.Where(t => entryFilters.Allows(t.Sig, t.Sym)).ToList();
-    Console.WriteLine($"After overlap dedup: {before} → filters [{entryFilters}]: {survivors.Count}");
+    survivors = RecommendedLiveConfig.Skip1115If1045Running(
+        survivors,
+        t => RecommendedLiveConfig.IndexKeyFromSymbol(t.Sym),
+        t => t.Sig.Reference.StartTime.TimeOfDay,
+        t => t.Sig.EntryTime,
+        t => t.Sig.OutcomeTime ?? t.Sig.EntryTime.Date.AddHours(15).AddMinutes(30));
+    Console.WriteLine($"After overlap dedup: {before} → filters+refRule [{entryFilters}]: {survivors.Count}");
 
     var cands = survivors.Select(x => new LiveCand(x.Sig, x.Priority)).ToList();
     var decisions = PortfolioSelector.Select(cands, maxSlPerDay: maxSl, minGapMinutes: gap);

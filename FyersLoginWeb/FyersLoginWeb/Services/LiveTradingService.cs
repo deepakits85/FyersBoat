@@ -66,7 +66,7 @@ namespace FyersLoginWeb.Services
             EnsureCompareLog(DateTime.Now);
             CompareLog("BOOT", "-",
                 $"Paper={PaperMode} CLOSE={UseCandleEntry} TICK={UseLiveEntry} " +
-                $"legs=Nifty+Bank+Sensex refs=11:15 RR=1:3 SL@50% retr>20%");
+                $"legs=Nifty+Bank+Sensex refs=10:45,11:15 (skip 11:15 if 10:45 open) RR=1:3 SL=refLow");
 
             _log.LogInformation(
                 "Live COMPARE mode: CLOSE={Close} TICK={Tick} Paper={Paper}. Log={Log}",
@@ -220,6 +220,17 @@ namespace FyersLoginWeb.Services
                 survivors.Add((sym, cepe, rw, s, prio));
             }
 
+            int beforeRefRule = survivors.Count;
+            survivors = RecommendedLiveConfig.Skip1115If1045Running(
+                survivors,
+                t => RecommendedLiveConfig.IndexKeyFromSymbol(t.sym),
+                t => t.s.Reference.StartTime.TimeOfDay,
+                t => t.s.EntryTime,
+                t => t.s.OutcomeTime ?? day.AddHours(15).AddMinutes(30));
+            if (survivors.Count != beforeRefRule)
+                CompareLog("REF_SKIP", "-",
+                    $"10:45 running → skipped {beforeRefRule - survivors.Count} x 11:15 signal(s)");
+
             var cands = survivors.Select(x => new LiveCandidate(x.s, x.prio)).ToList();
             var decisions = PortfolioSelector.Select(
                 cands,
@@ -339,6 +350,14 @@ namespace FyersLoginWeb.Services
             if (now.TimeOfDay >= config.SquareOffTime)
             { _feed.ClearWatch(sym); return; }
 
+            // 10:45 trade still open on this index → do not arm 11:15
+            if (rs == RecommendedLiveConfig.Ref1115 && HasOpenIndexTrade(sym))
+            {
+                CompareLog("TICK_SKIP", sym, "11:15 armed nahi — 10:45 trade abhi running");
+                _feed.ClearWatch(sym);
+                return;
+            }
+
             lock (_entryLock)
             {
                 if (_enteredByMode.ContainsKey(sym))
@@ -418,8 +437,17 @@ namespace FyersLoginWeb.Services
 
         private bool LivePortfolioAllows(DateTime now)
         {
-            // User: koi portfolio rule nahi — har signal allowed
+            // User: koi portfolio gap/maxSL nahi — har signal allowed
             return true;
+        }
+
+        private bool HasOpenIndexTrade(string sym)
+        {
+            var key = RecommendedLiveConfig.IndexKeyFromSymbol(sym);
+            return _mgr.Positions.Any(p =>
+                p.Outcome == null &&
+                !string.Equals(p.State, "CLOSED", StringComparison.OrdinalIgnoreCase) &&
+                RecommendedLiveConfig.IndexKeyFromSymbol(p.Symbol) == key);
         }
 
         private void EnsureCompareLog(DateTime now)
