@@ -3,24 +3,12 @@ using System;
 namespace FyersLoginWeb.Strategy
 {
     /// <summary>
-    /// 30-min reference candle par based "double breach with retracement" strategy.
-    /// Direction-aware — Long (BUY) aur Short (SELL) dono.
-    ///
-    /// LONG (BUY):
-    ///   1) First breakout : 3m High > 30m High
-    ///   2) Retracement    : 3m Low  &lt;= (High - Range*pct)
-    ///   3) Second breakout: 3m High > 30m High
-    ///   4) Entry zone      : [High .. High + buffer]  (chasing nahi)
-    ///   SL = retrLevel - slBuf ; Target = Entry + Risk*RR (upar)
-    ///
-    /// SHORT (SELL) — mirror:
-    ///   1) First breakdown : 3m Low  &lt; 30m Low
-    ///   2) Retracement     : 3m High >= (Low + Range*pct)
-    ///   3) Second breakdown: 3m Low  &lt; 30m Low
-    ///   4) Entry zone       : [Low - buffer .. Low]
-    ///   SL = retrLevel + slBuf ; Target = Entry - Risk*RR (neeche)
-    ///
-    /// Ek reference par sirf ek signal. Sirf CLOSED 3-min candles pass karo.
+    /// SIMPLE rule (user):
+    ///   1) First breakout: 3m CLOSE above ref High (long) / below ref Low (short)
+    ///   2) Retracement: &gt; RetracementPercent of range (default 20%)
+    ///   3) Second breakout: BUY/SELL on breakout touch (wick) — close wait nahi
+    ///   SL = StopLossRetracementPercent of ref range (default 50%)
+    ///   Target = Entry ± Risk * RR
     /// </summary>
     public class BreakoutRetracementStrategy
     {
@@ -28,7 +16,8 @@ namespace FyersLoginWeb.Strategy
         private readonly TradeSide _side;
 
         private ReferenceCandle? _reference;
-        private decimal _retracementLevel;
+        private decimal _retracementLevel; // confirm level (e.g. 20%)
+        private decimal _stopLossLevel;    // SL level (e.g. 50%)
 
         private decimal _firstBreachPrice;
         private DateTime _firstBreachTime;
@@ -43,28 +32,16 @@ namespace FyersLoginWeb.Strategy
         public TradeSide Side => _side;
 
         private bool IsLong => _side == TradeSide.Long;
-
-        // cycle ka pehla breakout ho chuka? (prior-high check sirf pehle breakout pe lagta hai)
         private bool _hadFirstBreakout;
 
-        /// <summary>
-        /// MANUAL-style: hamesha 30m reference High/Low.
-        /// Prior-high mix nahi — warna chart pe dikhne wala breakout bot skip kar deta hai.
-        /// </summary>
         private decimal EffLevel => IsLong ? _reference!.High : _reference!.Low;
 
-        /// <summary>Entry @ reference High/Low (+ buffer).</summary>
         public decimal EntryCapPrice => IsLong
             ? _reference!.High + _config.EntryBufferPoints
             : _reference!.Low - _config.EntryBufferPoints;
 
-        /// <summary>
-        /// Retracement confirm: soft = pullback to EffLevel; else full RetracementPercent (50%).
-        /// </summary>
         private bool IsRetracementTouch(Candle c) =>
-            _config.SoftRetracementConfirm
-                ? (IsLong ? c.Low <= EffLevel : c.High >= EffLevel)
-                : (IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel);
+            IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel;
 
         public BreakoutRetracementStrategy(StrategyConfig? config = null, TradeSide side = TradeSide.Long)
         {
@@ -75,10 +52,12 @@ namespace FyersLoginWeb.Strategy
         public void SetReference(ReferenceCandle reference)
         {
             _reference = reference ?? throw new ArgumentNullException(nameof(reference));
-            // retracement level: long neeche (High - Range*pct), short upar (Low + Range*pct)
             _retracementLevel = IsLong
                 ? reference.High - reference.Range * _config.RetracementPercent
                 : reference.Low + reference.Range * _config.RetracementPercent;
+            _stopLossLevel = IsLong
+                ? reference.High - reference.Range * _config.StopLossRetracementPercent
+                : reference.Low + reference.Range * _config.StopLossRetracementPercent;
             Reset();
         }
 
@@ -109,177 +88,150 @@ namespace FyersLoginWeb.Strategy
             };
         }
 
-        // Step 1: pehla breach (BUY/SELL nahi)
         private StrategyResult HandleFirstBreach(Candle c)
         {
-            // pehla breakout -> EffLevel me prior-high (resistance) bhi shaamil
-            bool breached = IsLong ? c.High > EffLevel : c.Low < EffLevel;
+            // Optional legacy path (OFF in simple config)
+            if (_config.UseRetracementFirst && IsRetracementTouch(c))
+            {
+                _retracementExtreme = IsLong ? c.Low : c.High;
+                _retracementTime = c.StartTime;
+                State = StrategyState.WaitingForSecondBreakout;
+                return new StrategyResult
+                {
+                    State = State,
+                    JustConfirmed = StrategyState.RetracementConfirmed,
+                    Message = $"RETRACEMENT-first @ {_retracementLevel}. Ab breakout."
+                };
+            }
+
+            bool breached = _config.FirstBreakoutRequireClose
+                ? (IsLong ? c.Close > EffLevel : c.Close < EffLevel)
+                : (IsLong ? c.High > EffLevel : c.Low < EffLevel);
+
             if (breached)
             {
                 _firstBreachPrice = IsLong ? c.High : c.Low;
                 _firstBreachTime = c.StartTime;
-                _hadFirstBreakout = true; // ab aage 2nd breakout sirf reference high dekhega
+                _hadFirstBreakout = true;
                 State = StrategyState.WaitingForRetracement;
-
                 return new StrategyResult
                 {
                     State = State,
                     JustConfirmed = StrategyState.FirstBreakoutConfirmed,
                     Message = IsLong
-                        ? $"FIRST_BREAKOUT: 3m High {c.High} > refHigh {EffLevel}. Ab retracement (neeche)."
-                        : $"FIRST_BREAKDOWN: 3m Low {c.Low} < refLow {EffLevel}. Ab retracement (upar)."
-                };
-            }
-
-            // NAYA: breakout se PEHLE hi retracement ho gaya (price 50% tak aa gayi) to
-            // seedha WaitingForSecondBreakout — ab agla breakout hi BUY/SELL dega.
-            // UseRetracementFirst=false -> ye loose path OFF: pehle asli breakout zaroori.
-            bool retrEarly = _config.UseRetracementFirst &&
-                (IsLong ? c.Low <= _retracementLevel : c.High >= _retracementLevel);
-            if (retrEarly)
-            {
-                _retracementExtreme = IsLong ? c.Low : c.High;
-                _retracementTime = c.StartTime;
-                State = StrategyState.WaitingForSecondBreakout;
-
-                return new StrategyResult
-                {
-                    State = State,
-                    JustConfirmed = StrategyState.RetracementConfirmed,
-                    Message = IsLong
-                        ? $"RETRACEMENT-first: 3m Low {c.Low} <= level {_retracementLevel} (breakout se pehle). Ab breakout hi BUY dega."
-                        : $"RETRACEMENT-first: 3m High {c.High} >= level {_retracementLevel} (breakdown se pehle). Ab breakdown hi SELL dega."
+                        ? $"FIRST_BREAKOUT: Close {c.Close} > refHigh {EffLevel}. Ab >{_config.RetracementPercent:P0} retracement."
+                        : $"FIRST_BREAKDOWN: Close {c.Close} < refLow {EffLevel}. Ab >{_config.RetracementPercent:P0} retracement."
                 };
             }
 
             return Info(IsLong
-                ? $"Waiting first breakout: 3m High {c.High} <= 30m High {_reference!.High}."
-                : $"Waiting first breakdown: 3m Low {c.Low} >= 30m Low {_reference!.Low}.");
+                ? $"Waiting first breakout close > refHigh {EffLevel} (Close={c.Close})."
+                : $"Waiting first breakdown close < refLow {EffLevel} (Close={c.Close}).");
         }
 
-        // Step 2: retracement (BUY/SELL nahi)
         private StrategyResult HandleRetracement(Candle c)
         {
-            // freshness: first breakout ke baad 15 min me retracement na aaye to setup drop
-            if ((c.StartTime - _firstBreachTime).TotalMinutes > _config.SetupFreshnessMinutes)
+            if (_config.UseSetupFreshness &&
+                (c.StartTime - _firstBreachTime).TotalMinutes > _config.SetupFreshnessMinutes)
             {
                 Reset();
-                return HandleFirstBreach(c); // isi candle ko naye setup ki tarah dekho
+                return HandleFirstBreach(c);
             }
 
-            bool retr = IsRetracementTouch(c);
-            if (retr)
+            if (IsRetracementTouch(c))
             {
                 _retracementExtreme = IsLong ? c.Low : c.High;
                 _retracementTime = c.StartTime;
                 State = StrategyState.WaitingForSecondBreakout;
-
                 return new StrategyResult
                 {
                     State = State,
                     JustConfirmed = StrategyState.RetracementConfirmed,
                     Message = IsLong
-                        ? (_config.SoftRetracementConfirm
-                            ? $"RETRACEMENT: 3m Low {c.Low} <= refHigh {EffLevel} (soft, 50% not required). Ab 2nd breakout."
-                            : $"RETRACEMENT: 3m Low {c.Low} <= level {_retracementLevel}. Ab 2nd breakout.")
-                        : (_config.SoftRetracementConfirm
-                            ? $"RETRACEMENT: 3m High {c.High} >= refLow {EffLevel} (soft, 50% not required). Ab 2nd breakdown."
-                            : $"RETRACEMENT: 3m High {c.High} >= level {_retracementLevel}. Ab 2nd breakdown.")
+                        ? $"RETRACEMENT: Low {c.Low} <= {_retracementLevel} (>{_config.RetracementPercent:P0}). Ab 2nd breakout."
+                        : $"RETRACEMENT: High {c.High} >= {_retracementLevel} (>{_config.RetracementPercent:P0}). Ab 2nd breakdown."
                 };
             }
+
             return Info(IsLong
-                ? (_config.SoftRetracementConfirm
-                    ? $"Waiting retracement: 3m Low {c.Low} > refHigh {EffLevel}."
-                    : $"Waiting retracement: 3m Low {c.Low} > level {_retracementLevel}.")
-                : (_config.SoftRetracementConfirm
-                    ? $"Waiting retracement: 3m High {c.High} < refLow {EffLevel}."
-                    : $"Waiting retracement: 3m High {c.High} < level {_retracementLevel}."));
+                ? $"Waiting retracement: Low {c.Low} > {_retracementLevel}."
+                : $"Waiting retracement: High {c.High} < {_retracementLevel}.");
         }
 
-        // Step 3: doosra breach -> setup ready, entry dekho
         private StrategyResult HandleSecondBreach(Candle c)
         {
-            // agar is candle par phir se soft/full retracement touch hua to time refresh
             if (IsRetracementTouch(c))
             {
                 _retracementExtreme = IsLong ? c.Low : c.High;
                 _retracementTime = c.StartTime;
             }
 
-            // Confirm + entry level = reference High/Low (manual chart jaisa).
             decimal lvl = EffLevel;
             bool breached = IsLong ? c.High > lvl : c.Low < lvl;
-            if (breached)
+            if (!breached)
+                return Info(IsLong
+                    ? $"Waiting 2nd breakout: High {c.High} <= refHigh {lvl}."
+                    : $"Waiting 2nd breakdown: Low {c.Low} >= refLow {lvl}.");
+
+            if (_config.UseSetupFreshness &&
+                (c.StartTime - _retracementTime).TotalMinutes > _config.SetupFreshnessMinutes)
             {
-                // retest freshness: retracement ke 15 min ke andar hi breakout valid
-                if ((c.StartTime - _retracementTime).TotalMinutes > _config.SetupFreshnessMinutes)
-                {
-                    State = StrategyState.WaitingForRetracement; // stale -> fresh retracement chahiye
-                    return Info(IsLong
-                        ? $"Breakout par retest stale ({(c.StartTime - _retracementTime).TotalMinutes:F0}m purana). Fresh retracement ka intezaar."
-                        : $"Breakdown par retest stale. Fresh retracement ka intezaar.");
-                }
-
-                _secondBreachPrice = IsLong ? c.High : c.Low;
-                _secondBreachTime = c.StartTime;
-
-                decimal cap = EntryCapPrice;
-
-                bool needConfirm = _config.RequireCloseConfirm
-                    || (_config.ConfirmRetrFirstOnly && !_hadFirstBreakout);
-                if (!needConfirm)
-                    return GenerateSignal(c, cap);
-
-                bool holdFailed = IsLong ? c.Close < lvl : c.Close > lvl;
-                if (holdFailed)
-                    return Info(IsLong
-                        ? $"Breakout wick par Close {c.Close} < refHigh {lvl}. Valid close ka intezaar."
-                        : $"Breakdown wick par Close {c.Close} > refLow {lvl}. Valid close ka intezaar.");
-
-                bool canFillNow = IsLong ? c.Low <= cap : c.High >= cap;
-                if (canFillNow)
-                    return GenerateSignal(c, cap);
-
-                State = StrategyState.WaitingForEntry;
-                return new StrategyResult
-                {
-                    State = State,
-                    JustConfirmed = StrategyState.SecondBreakoutConfirmed,
-                    Message = IsLong
-                        ? $"SECOND_BREAKOUT CLOSE-OK vs refHigh {lvl}; candle cap se upar gap. Pullback wait."
-                        : $"SECOND_BREAKDOWN CLOSE-OK vs refLow {lvl}; candle cap se neeche gap. Pullback wait."
-                };
+                State = StrategyState.WaitingForRetracement;
+                return Info("2nd breakout stale — fresh retracement chahiye.");
             }
-            return Info(IsLong
-                ? $"Waiting 2nd breakout: 3m High {c.High} <= refHigh {lvl}."
-                : $"Waiting 2nd breakdown: 3m Low {c.Low} >= refLow {lvl}.");
+
+            _secondBreachPrice = IsLong ? c.High : c.Low;
+            _secondBreachTime = c.StartTime;
+            decimal cap = EntryCapPrice;
+
+            // Simple: buy on breakout touch — close wait nahi
+            bool needConfirm = _config.RequireCloseConfirm
+                || (_config.ConfirmRetrFirstOnly && !_hadFirstBreakout);
+            if (!needConfirm)
+                return GenerateSignal(c, cap);
+
+            bool holdFailed = IsLong ? c.Close < lvl : c.Close > lvl;
+            if (holdFailed)
+                return Info(IsLong
+                    ? $"Breakout wick Close {c.Close} < refHigh {lvl}."
+                    : $"Breakdown wick Close {c.Close} > refLow {lvl}.");
+
+            if (IsLong ? c.Low <= cap : c.High >= cap)
+                return GenerateSignal(c, cap);
+
+            State = StrategyState.WaitingForEntry;
+            return new StrategyResult
+            {
+                State = State,
+                JustConfirmed = StrategyState.SecondBreakoutConfirmed,
+                Message = "2nd breakout close-OK; pullback wait for cap."
+            };
         }
 
-        // Step 4: price pullback me entry-zone tak aaya? to entry
         private StrategyResult HandleEntry(Candle c)
         {
-            // long: price neeche cap tak (Low <= cap) ; short: price upar cap tak (High >= cap)
             bool reached = IsLong ? c.Low <= EntryCapPrice : c.High >= EntryCapPrice;
             if (reached)
                 return GenerateSignal(c, EntryCapPrice);
-
             return Info(IsLong
-                ? $"Waiting entry: 3m Low {c.Low} > cap {EntryCapPrice}."
-                : $"Waiting entry: 3m High {c.High} < cap {EntryCapPrice}.");
+                ? $"Waiting entry: Low {c.Low} > cap {EntryCapPrice}."
+                : $"Waiting entry: High {c.High} < cap {EntryCapPrice}.");
         }
 
-        // Entry fill -> signal with SL/target
         private StrategyResult GenerateSignal(Candle c, decimal entry)
         {
             decimal sl = IsLong
-                ? _retracementLevel - _config.StopLossBufferPoints
-                : _retracementLevel + _config.StopLossBufferPoints;
+                ? _stopLossLevel - _config.StopLossBufferPoints
+                : _stopLossLevel + _config.StopLossBufferPoints;
             decimal risk = IsLong ? entry - sl : sl - entry;
+            if (risk <= 0)
+                return Info($"Invalid risk (entry={entry}, SL={sl}). Skip.");
+
             decimal target = IsLong
                 ? entry + risk * _config.RiskRewardRatio
                 : entry - risk * _config.RiskRewardRatio;
 
-            State = StrategyState.BuySignal; // terminal (dono side ke liye "signal generated")
+            State = StrategyState.BuySignal;
 
             var signal = new TradeSignal
             {
@@ -305,8 +257,7 @@ namespace FyersLoginWeb.Strategy
                 State = State,
                 JustConfirmed = StrategyState.BuySignal,
                 Signal = signal,
-                Message = $"{(IsLong ? "BUY" : "SELL")} @ {entry} | SL {sl} | Target {target} " +
-                          $"(1:{_config.RiskRewardRatio}) | Risk {risk}."
+                Message = $"{(IsLong ? "BUY" : "SELL")} @ {entry} | SL {sl} (50% struct) | T {target} (1:{_config.RiskRewardRatio})"
             };
         }
 

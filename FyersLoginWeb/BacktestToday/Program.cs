@@ -425,9 +425,9 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
     matchSym ??= _ => true;
     var legs = new[]
     {
-        ("NSE:NIFTY50-INDEX", "Nifty", 2m, 0),
+        ("NSE:NIFTY50-INDEX", "Nifty", 3m, 0),
         ("BSE:SENSEX-INDEX", "Sensex", 3m, 1),
-        ("NSE:NIFTYBANK-INDEX", "BankNifty", 2m, 2),
+        ("NSE:NIFTYBANK-INDEX", "BankNifty", 3m, 2),
     }.Where(l => matchSym(l.Item2)).ToArray();
     if (legs.Length == 0)
         Fail("--symbols matched zero legs. Use Nifty, BankNifty, and/or Sensex.");
@@ -454,8 +454,7 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
             if (useRecommended)
             {
                 config = RecommendedLiveConfig.MakeConfig(useRr);
-                config.UseTrailing = trailing;
-                config.UseReferenceMaxWait = refWait;
+                // MakeConfig is source of truth (simple rule). CLI trail/refWait only with --legacy-config.
             }
             else
             {
@@ -624,9 +623,9 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
     // Cache-first ATM CE/PE backtest (same as live bot symbol style YYMMM for monthly weeklies in July cache).
     var legs = new[]
     {
-        new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 2m, 50m, 0),
+        new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 3m, 50m, 0),
         new Leg("sensex", "BSE:SENSEX-INDEX", "BSE:SENSEX", 3m, 100m, 1),
-        new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 2m, 100m, 2),
+        new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 3m, 100m, 2),
     };
 
     var raw = new List<OptRow>();
@@ -648,8 +647,6 @@ static async Task RunOptionsRangeAsync(HttpClient http, string clientId, string 
             if (rrSensex != null && leg.Code == "sensex")
                 useRr = rrSensex.Value;
             var config = RecommendedLiveConfig.MakeConfig(useRr);
-            config.UseTrailing = trailing;
-            config.UseReferenceMaxWait = refWait;
             if ((rrOverride != null || (rrSensex != null && leg.Code == "sensex")) && useRr < 2m)
             {
                 config.TrailActivateRR = 2m;
@@ -794,9 +791,9 @@ static async Task RunOptionsAsync(HttpClient http, string clientId, string acces
     // Symbols come from Fyers options-chain (handles weekly YYMDD vs monthly YYMMM).
     var legs = new[]
     {
-        new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 2m, 50m, 0),
+        new Leg("nifty", "NSE:NIFTY50-INDEX", "NSE:NIFTY", 3m, 50m, 0),
         new Leg("sensex", "BSE:SENSEX-INDEX", "BSE:SENSEX", 3m, 100m, 1),
-        new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 2m, 100m, 2),
+        new Leg("bank", "NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", 3m, 100m, 2),
     };
 
     var raw = new List<OptRow>();

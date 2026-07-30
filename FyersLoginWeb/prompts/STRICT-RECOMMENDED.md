@@ -1,33 +1,16 @@
-# Recommended live config (current R&D)
+# Simple 11:15 rule
 
-Branch: **`cursor/no-retr-first-90e4`**
+Sirf yeh:
 
-User-selected live stack (manual-chart aligned):
+1. Reference = **11:15** (30m candle)
+2. **First breakout** = 3m **CLOSE** > ref High (short: CLOSE < ref Low)
+3. **Retracement** = **> 20%** of ref range
+4. **Second breakout** = entry **on touch** (wick) — close wait nahi
+5. **SL** = ref **50%** | **Target** = **1:3**
+6. Indices = **Nifty + BankNifty + Sensex**
 
-| Setting | Value |
-|---------|-------|
-| Index | **Nifty only** |
-| Refs | **11:15 only** |
-| Breakout level | **Reference High/Low** (`UsePriorLevelBreak=false`) |
-| Sequence | **First BO → soft retrace → 2nd BO** (`UseRetracementFirst=false`, `SoftRetracementConfirm=true`) |
-| Retracement | Pullback to ref High/Low enough — **full 50% touch not required** (SL still at 50% structure) |
-| Filters | **OFF** (no skip) |
-| Entry | Close confirm @ EffLevel; same-candle fill if Low ≤ Cap |
-| Risk | RR=2, trail +1R, 90m wait, 14:45 square-off |
-
-## Code
-- `LiveTradingService.Legs` — Nifty only
-- `RecommendedLiveConfig.Refs` — 11:15
-- `RecommendedLiveConfig.EntryFilters()` — empty
-- `MakeConfig` — `UsePriorLevelBreak=false`, `UseRetracementFirst=false`, `SoftRetracementConfirm=true`
-
-## Note on older +63.8R number
-
-That figure was from a **different** stack (Nifty+Bank, multi refs, prior-High breakout, strict filters).  
-Current live stack is intentionally simpler / chart-aligned — re-run:
+Band: prior-high, retracement-first, soft-retrace, filters, trail, freshness, 90m max-wait.
 
 ```
-dotnet run -c Release --project BacktestToday -- \
-  --mode index --from 2025-08-01 --to 2026-06-30 \
-  --symbols Nifty --refs 11:15 --filters none --cache-only
+RecommendedLiveConfig.MakeConfig(3)
 ```

@@ -47,6 +47,8 @@ namespace FyersLoginWeb.Services
         private static readonly Leg[] Legs =
         {
             new("NSE:NIFTY50-INDEX", "NSE:NIFTY", RecommendedLiveConfig.NiftyRr, RecommendedLiveConfig.StrikeStepNifty, 0),
+            new("NSE:NIFTYBANK-INDEX", "NSE:BANKNIFTY", RecommendedLiveConfig.BankRr, RecommendedLiveConfig.StrikeStepBank, 1),
+            new("BSE:SENSEX-INDEX", "BSE:SENSEX", RecommendedLiveConfig.SensexRr, RecommendedLiveConfig.StrikeStepSensex, 2),
         };
 
         public LiveTradingService(IServiceScopeFactory scopeFactory, ILogger<LiveTradingService> log,
@@ -64,7 +66,7 @@ namespace FyersLoginWeb.Services
             EnsureCompareLog(DateTime.Now);
             CompareLog("BOOT", "-",
                 $"Paper={PaperMode} CLOSE={UseCandleEntry} TICK={UseLiveEntry} " +
-                $"legs=Nifty refs={string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\\:mm")))}");
+                $"legs=Nifty+Bank+Sensex refs=11:15 RR=1:3 SL@50% retr>20%");
 
             _log.LogInformation(
                 "Live COMPARE mode: CLOSE={Close} TICK={Tick} Paper={Paper}. Log={Log}",

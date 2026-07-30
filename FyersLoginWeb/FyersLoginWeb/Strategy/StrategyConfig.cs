@@ -30,6 +30,23 @@ namespace FyersLoginWeb.Strategy
             => RetracementPercent = percentage / 100m;
 
         /// <summary>
+        /// SL distance as fraction of ref range (separate from confirm retracement).
+        /// Default 0.50 = SL at 50% of reference candle.
+        /// </summary>
+        public decimal StopLossRetracementPercent { get; set; } = 0.50m;
+
+        /// <summary>
+        /// First breakout needs candle CLOSE beyond EffLevel (not just wick).
+        /// Default false (legacy High/Low wick). Simple rule: true.
+        /// </summary>
+        public bool FirstBreakoutRequireClose { get; set; } = false;
+
+        /// <summary>
+        /// Freshness / stale-retest timer on/off. Simple rule: false (band).
+        /// </summary>
+        public bool UseSetupFreshness { get; set; } = true;
+
+        /// <summary>
         /// Entry zone buffer (points). BUY sirf [30m High .. 30m High + EntryBufferPoints]
         /// ke beech me hi hoga. Agar price zyada upar chala jaye to price wapas is zone me
         /// aane par entry milegi. Default 5.
