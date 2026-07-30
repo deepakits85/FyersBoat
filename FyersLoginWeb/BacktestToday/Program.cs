@@ -39,6 +39,13 @@ var refs = GetArg("--refs", "10:45,11:15,12:45")
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(s => TimeSpan.Parse(s.Trim()))
     .ToList();
+// Optional: --symbols Nifty | BankNifty | Sensex (comma). Default = all three.
+var symbolFilter = GetArg("--symbols", "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .Select(s => s.ToLowerInvariant())
+    .ToHashSet();
+bool MatchSym(string shortName) =>
+    symbolFilter.Count == 0 || symbolFilter.Contains(shortName.ToLowerInvariant());
 
 EntryFilterConfig entryFilters = filterPreset switch
 {
@@ -47,6 +54,10 @@ EntryFilterConfig entryFilters = filterPreset switch
     "reduce-sl-ultra" or "ultra" => EntryFilterConfig.ReduceStopLossUltraPreset(),
     _ => new EntryFilterConfig()
 };
+// Align index backtest with RecommendedLiveConfig (ref-High, close confirm, trail, 90m)
+bool useRecommended = !argsList.Any(a => a.Equals("--legacy-config", StringComparison.OrdinalIgnoreCase));
+bool forcePrior = argsList.Any(a => a.Equals("--prior", StringComparison.OrdinalIgnoreCase));
+bool forceNoPrior = argsList.Any(a => a.Equals("--no-prior", StringComparison.OrdinalIgnoreCase));
 
 string root = FindAppRoot();
 string appsettingsPath = Path.Combine(root, "FyersLoginWeb", "appsettings.json");
@@ -136,7 +147,7 @@ if ((mode == "index" || mode == "options") && (fromDate != null || toDate != nul
     var end = toDate ?? day;
     Console.WriteLine($"=== {mode} range {start:yyyy-MM-dd} -> {end:yyyy-MM-dd}  trailing={trailing}  refs={string.Join(",", refs)}  refWait={(refWait ? "90m" : "OFF")}  rr={(rrOverride?.ToString() ?? "default")} rrSensex={(rrSensex?.ToString() ?? "-")}  gap={gap}m maxSL={maxSl}  filters={entryFilters} ===\n");
     if (mode == "index")
-        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex);
+        await RunIndexRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex, MatchSym, useRecommended, forcePrior, forceNoPrior);
     else
         await RunOptionsRangeAsync(http, fyers.ClientId, access, start, end, refs, trailing, maxSl, gap, cacheDirs, dumpPath, entryFilters, refWait, rrOverride, rrSensex);
 }
@@ -407,15 +418,19 @@ static async Task RunIndexAsync(HttpClient http, string clientId, string access,
 static async Task RunIndexRangeAsync(HttpClient http, string clientId, string access,
     DateTime from, DateTime to, List<TimeSpan> refs, bool trailing, int maxSl, int gap, string[] cacheDirs,
     string dumpPath = "", EntryFilterConfig? entryFilters = null, bool refWait = true, decimal? rrOverride = null,
-    decimal? rrSensex = null)
+    decimal? rrSensex = null, Func<string, bool>? matchSym = null, bool useRecommended = true,
+    bool forcePrior = false, bool forceNoPrior = false)
 {
     entryFilters ??= new EntryFilterConfig();
+    matchSym ??= _ => true;
     var legs = new[]
     {
-        ("NSE:NIFTY50-INDEX", 2m, 0),
-        ("BSE:SENSEX-INDEX", 3m, 1),
-        ("NSE:NIFTYBANK-INDEX", 2m, 2),
-    };
+        ("NSE:NIFTY50-INDEX", "Nifty", 2m, 0),
+        ("BSE:SENSEX-INDEX", "Sensex", 3m, 1),
+        ("NSE:NIFTYBANK-INDEX", "BankNifty", 2m, 2),
+    }.Where(l => matchSym(l.Item2)).ToArray();
+    if (legs.Length == 0)
+        Fail("--symbols matched zero legs. Use Nifty, BankNifty, and/or Sensex.");
 
     var raw = new List<PfRow>();
     int daysWithData = 0, apiHits = 0, cacheHits = 0;
@@ -424,7 +439,7 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
     {
         if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
         bool any = false;
-        foreach (var (sym, rr, prio) in legs)
+        foreach (var (sym, name, rr, prio) in legs)
         {
             bool hadCache = TryLoadCache(cacheDirs, sym, "3", day) != null;
             var candles = await GetCandlesAsync(http, clientId, access, sym, "3", day, cacheDirs);
@@ -435,28 +450,40 @@ static async Task RunIndexRangeAsync(HttpClient http, string clientId, string ac
             decimal useRr = rrOverride ?? rr;
             if (rrSensex != null && sym.Contains("SENSEX", StringComparison.OrdinalIgnoreCase))
                 useRr = rrSensex.Value;
-            var config = new StrategyConfig
+            StrategyConfig config;
+            if (useRecommended)
             {
-                EntryBufferPoints = 0m,
-                StopLossBufferPoints = 0m,
-                RiskRewardRatio = useRr,
-                UseTrailing = trailing,
-                UseSquareOff = true,
-                UseReferenceMaxWait = refWait
-            };
+                config = RecommendedLiveConfig.MakeConfig(useRr);
+                config.UseTrailing = trailing;
+                config.UseReferenceMaxWait = refWait;
+            }
+            else
+            {
+                config = new StrategyConfig
+                {
+                    EntryBufferPoints = 0m,
+                    StopLossBufferPoints = 0m,
+                    RiskRewardRatio = useRr,
+                    UseTrailing = trailing,
+                    UseSquareOff = true,
+                    UseReferenceMaxWait = refWait
+                };
+                config.SetRetracementFromPercentage(50m);
+            }
+            if (forcePrior) config.UsePriorLevelBreak = true;
+            if (forceNoPrior) config.UsePriorLevelBreak = false;
             // 1:1 pe trail@2R kabhi pehle fire nahi — target pehle hit hota hai
             if ((rrOverride != null || rrSensex != null) && useRr < 2m)
             {
                 config.TrailActivateRR = 2m;
                 config.TrailTargetRR = 2.5m;
             }
-            config.SetRetracementFromPercentage(50m);
 
             foreach (var rs in refs)
             {
                 var res = StrategyBacktester.Run(candles, config, rs);
                 foreach (var s in res.BuySignals.Concat(res.SellSignals))
-                    raw.Add(new PfRow(sym, ShortName(sym), prio, s));
+                    raw.Add(new PfRow(sym, name, prio, s));
             }
             if (!hadCache) await Task.Delay(80);
         }

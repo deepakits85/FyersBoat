@@ -64,7 +64,7 @@ namespace FyersLoginWeb.Services
             EnsureCompareLog(DateTime.Now);
             CompareLog("BOOT", "-",
                 $"Paper={PaperMode} CLOSE={UseCandleEntry} TICK={UseLiveEntry} " +
-                $"refs={string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\\:mm")))} Sensex=OFF");
+                $"legs=Nifty refs={string.Join(",", RecommendedLiveConfig.Refs.Select(r => r.ToString(@"hh\\:mm")))}");
 
             _log.LogInformation(
                 "Live COMPARE mode: CLOSE={Close} TICK={Tick} Paper={Paper}. Log={Log}",

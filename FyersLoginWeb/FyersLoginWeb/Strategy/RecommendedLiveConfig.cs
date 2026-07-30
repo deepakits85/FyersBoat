@@ -5,14 +5,15 @@ using System.Linq;
 namespace FyersLoginWeb.Strategy
 {
     /// <summary>
-    /// DATA-BACKED live defaults (R&amp;D): jo 11m index pe jeeta woh.
+    /// Live product (user R&amp;D):
+    ///   - Index: Nifty only
+    ///   - Refs: 11:15 only
+    ///   - Breakout / entry level: REFERENCE High/Low (UsePriorLevelBreak=false)
+    ///   - Entry: close confirm @ EffLevel(=ref H/L); same-candle fill if Low ≤ Cap; else pullback wait
+    ///   - Filters: OFF (koi skip nahi)
+    ///   - Risk: RR=2, trail after +1R, 90m wait, 14:45 square-off
     ///
-    /// Winner (Aug 2025–Jul 2026 index, strict): ~150 trades, ~+63.8R, ~5.3R/mo.
-    /// Entry model: Close confirm @ EffLevel, SAME candle pe fill agar Low&lt;=cap
-    /// (sirf gap hone pe pullback wait). "Next-bar @ refHigh only" R&amp;D pe haar gaya (~+1R).
-    ///
-    /// Nifty only, ref 11:15 only, RR 1:2, 90m wait ON, trail ON.
-    /// Breakout/entry = reference High (manual match). Prior-high OFF.
+    /// Older +63.8R was a different stack (Nifty+Bank, prior-high, strict). Do not mix numbers.
     /// </summary>
     public static class RecommendedLiveConfig
     {

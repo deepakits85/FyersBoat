@@ -1,36 +1,31 @@
-# DATA-BACKED recommended config (R&D)
+# Recommended live config (current R&D)
 
 Branch: **`cursor/strict-recommended-90e4`**
 
-## Principle
-Jo **11m index data** pe jeete, wahi use. Theory / “live feel” rules se data winner mat todna.
-
-## Winner (verified restore)
-Index Aug 2025–Jul 2026 | strict filters | close-confirm @ EffLevel | **same-candle fill** if Low≤cap:
-
-| | |
-|--|--|
-| TAKEN | ~150 trades |
-| NetR | **~+63.8R** |
-| Avg / month | **~+5.3R** |
-| Pos months | 10/12 |
-
-## Rules (DATA)
+User-selected live stack (manual-chart aligned):
 
 | Setting | Value |
-|---------|--------|
-| Indices | Nifty + BankNifty (Sensex filter-off) |
-| Refs | 11:15, 12:45 (10:45 skipped by strict) |
-| Filters | **strict** |
-| RR | 1:2 + trail |
-| 90m wait | ON |
-| Breakout | Close hold @ **EffLevel** (prior-high on retrace-first OK) |
-| Entry | Confirm candle pe fill agar Low≤cap; gap pe pullback wait |
-
-## Haar gaya (mat use karo abhi)
-“Confirm candle pe entry nahi + next bar @ refHigh only” → same 11m pe ~**+1.4R** (almost flat).
+|---------|-------|
+| Index | **Nifty only** |
+| Refs | **11:15 only** |
+| Breakout level | **Reference High/Low** (`UsePriorLevelBreak=false`) |
+| Filters | **OFF** (no skip) |
+| Entry | Close confirm @ EffLevel; same-candle fill if Low ≤ Cap |
+| Risk | RR=2, trail +1R, 90m wait, 14:45 square-off |
 
 ## Code
-- `BreakoutRetracementStrategy` — data-era entry (83cdcab path)
-- `RecommendedLiveConfig` — strict + this entry model
-- `EntryFilterConfig.ReduceStopLossStrictPreset()`
+- `LiveTradingService.Legs` — Nifty only
+- `RecommendedLiveConfig.Refs` — 11:15
+- `RecommendedLiveConfig.EntryFilters()` — empty
+- `MakeConfig` — `UsePriorLevelBreak=false`
+
+## Note on older +63.8R number
+
+That figure was from a **different** stack (Nifty+Bank, multi refs, prior-High breakout, strict filters).  
+Current live stack is intentionally simpler / chart-aligned — re-run:
+
+```
+dotnet run -c Release --project BacktestToday -- \
+  --mode index --from 2025-08-01 --to 2026-06-30 \
+  --symbols Nifty --refs 11:15 --filters none --cache-only
+```
