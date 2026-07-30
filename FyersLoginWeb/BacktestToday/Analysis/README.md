@@ -2,10 +2,18 @@
 
 ## ema_failed_break_multitf.py (current)
 EMA failed-break (Bank 15m 5-Jun style). First candle fully ignored.
-BUY: green High-break → next red | SELL: red Low-break → next green.
-EMA clear on break+entry | no entry after 14:45 | skip 2nd consecutive break.
+
+**BUY exact pattern:**
+1. Clear downtrend — last 3 candles before break all RED (broken is RED)
+2. GREEN breaks that red's High
+3. Next candle RED → entry on close
+4. Entry close stays above green break Low (`close` green-low se pehle)
+5. Break + entry clear below EMA9+15 | no entry after 14:45 | skip 2nd consecutive break
+
+**SELL** = mirror (3 greens → red low-break → next green; close below red high).
+
 **Day proximity 10% ON by default** (`--no-day-prox` only when asked).
-Day H/L measured **through the break candle only** (pre-entry) so entry cannot fake near day-low/high.
+Day H/L measured **through the break candle only** (pre-entry).
 SL prior 1–2 + 50% cap | Target 1:3.
 
 ```bash

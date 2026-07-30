@@ -4,13 +4,13 @@ EMA failed-break signal — multi-TF backtest.
 
 Rules (Bank 15m 5-Jun BUY style only):
   - First session candle ignored for signals
-  - BUY: clear below EMA9+EMA15 (break + entry both), optional near day-low (10%);
-         prior High broken by GREEN candle → next candle RED → entry on that close
-  - SELL: clear above both EMAs (break + entry), optional near day-high;
-         prior Low broken by RED candle → next candle GREEN → entry on that close
+  - BUY: clear downtrend (last 3 candles before break all RED, so broken is RED) →
+         GREEN breaks that red's High → next RED → entry on that close.
+         Entry close must stay above the green break candle's Low (close green-low se pehle).
+         Break + entry clear below EMA9+EMA15; optional near day-low (10%).
+  - SELL (mirror): last 3 before break all GREEN → RED breaks that green's Low →
+         next GREEN; entry close below the red break candle's High.
   - Day proximity uses day H/L through the BREAK candle only (pre-entry).
-    Entry cannot invent its own day-low/high to fake the 10% filter (Bank Jun5:
-    day-low already set on broken 13:30 before entry 14:00).
   - No entry after 14:45 IST
   - Ignore 2nd consecutive high/low break (broken candle itself already broke prior)
   - SL: min/max of prior 1–2 candles; if risk > 50% of candle just before broken → cap to 50%
@@ -35,6 +35,9 @@ APPSETTINGS = ROOT / "FyersLoginWeb" / "appsettings.json"
 
 IST = timedelta(hours=5, minutes=30)
 DEFAULT_TFS = ["10", "15", "20", "30"]
+# Clear downtrend/uptrend: this many candles immediately before break must be
+# all RED (BUY) / all GREEN (SELL). Includes the broken candle. BankJun5 had 6.
+TREND_LOOKBACK = 3
 SYMS = [
     ("Nifty", "NSE:NIFTY50-INDEX"),
     ("Bank", "NSE:NIFTYBANK-INDEX"),
@@ -176,11 +179,12 @@ def compute_sl(bars, entry_idx, broken_idx, entry, is_buy, sl_lookback):
 
 def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr):
     """Bank 15m 5-Jun style only:
-    BUY: High break + green break + next red → entry next close
-    SELL: Low break + red break + next green → entry next close
-    First candle never used as broken reference (break_idx >= 2).
+    BUY: clear red downtrend → green breaks a red high → next red; close above green low
+    SELL: clear green uptrend → red breaks a green low → next green; close below red high
+    First candle never used as broken reference.
     """
-    if break_idx < 2 or break_idx + 1 >= len(bars):
+    # Need TREND_LOOKBACK candles before break (all same color)
+    if break_idx < TREND_LOOKBACK or break_idx + 1 >= len(bars):
         return None
     brk = bars[break_idx]
     broken = bars[break_idx - 1]
@@ -193,8 +197,15 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
             return None
         if not is_red(nxt):
             return None
+        # Clear downtrend: last N before break all RED (broken is a red that green breaks)
+        prior = bars[break_idx - TREND_LOOKBACK : break_idx]
+        if not all(is_red(c) for c in prior):
+            return None
+        # Entry close stays above green break low (green ke low se pehle)
+        if not (nxt["c"] > brk["l"]):
+            return None
         # Continuous high-break ignore: broken already broke prior high → 2nd break
-        if break_idx >= 2 and broken["h"] > bars[break_idx - 2]["h"]:
+        if broken["h"] > bars[break_idx - 2]["h"]:
             return None
     else:
         if not (brk["l"] < broken["l"]):
@@ -203,7 +214,12 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
             return None
         if not is_green(nxt):
             return None
-        if break_idx >= 2 and broken["l"] < bars[break_idx - 2]["l"]:
+        prior = bars[break_idx - TREND_LOOKBACK : break_idx]
+        if not all(is_green(c) for c in prior):
+            return None
+        if not (nxt["c"] < brk["h"]):
+            return None
+        if broken["l"] < bars[break_idx - 2]["l"]:
             return None
 
     entry_idx = break_idx + 1
@@ -271,7 +287,7 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
 
 def scan_day(bars, use_day_prox, prox_pct, sl_lookback, rr):
     trades = []
-    i = 2  # first candle fully ignored (not even broken reference)
+    i = TREND_LOOKBACK  # need N prior trend candles; first candle still never broken-ref alone
     while i < len(bars):
         buy = try_signal(bars, i, True, use_day_prox, prox_pct, sl_lookback, rr)
         if buy:
@@ -344,7 +360,8 @@ def main():
     cid, access = load_auth()
     print(f"Cache dir: {CACHE}")
     print("Rule: EMA failed-break | first candle ignore | EMA9+15 clear")
-    print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
+    print(f"BUY: {TREND_LOOKBACK} reds downtrend → GREEN breaks red High → next RED (close > green Low)")
+    print(f"SELL: {TREND_LOOKBACK} greens uptrend → RED breaks green Low → next GREEN (close < red High)")
     print("EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break")
     print("First candle fully ignored (not used as broken reference)")
     print(f"Day proximity: {'ON '+str(prox_pct*100)+'% (pre-entry / through break)' if use_day_prox else 'OFF'}")

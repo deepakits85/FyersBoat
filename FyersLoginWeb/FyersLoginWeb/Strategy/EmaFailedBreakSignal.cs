@@ -7,12 +7,15 @@ namespace FyersLoginWeb.Strategy
     /// EMA failed-break opener (first session candle ignored).
     ///
     /// BUY (below EMA9+EMA15, optional near day-low) — Bank 15m 5-Jun style only:
-    ///   prior High broken by a GREEN candle → next candle must be RED → entry on that close.
+    ///   Clear downtrend: last 3 candles before break all RED (broken is RED).
+    ///   That red's High broken by a GREEN candle → next candle RED → entry on that close.
+    ///   Entry close must stay above the green break candle's Low.
     ///   Break + entry clear of EMA. No entry after 14:45.
     ///   Ignore if broken candle itself already broke prior high/low (2nd consecutive break).
     ///   Day proximity uses H/L through break only (pre-entry) — entry cannot fake day extreme.
-    /// SELL (above both EMAs, optional near day-high):
-    ///   prior Low broken by a RED candle → next candle must be GREEN → entry on that close.
+    /// SELL (mirror, above both EMAs, optional near day-high):
+    ///   Last 3 before break all GREEN → RED breaks that green's Low → next GREEN;
+    ///   entry close below the red break High.
     ///
     /// SL = lowest/highest of prior 1–2 candles; if risk &gt; 50% of candle just before broken,
     ///      cap SL distance to that 50%. Target 1:3.
@@ -22,6 +25,8 @@ namespace FyersLoginWeb.Strategy
         public const decimal DefaultRiskReward = 3m;
         public const decimal DefaultDayProximityPct = 0.10m; // 10% of day range
         public const int DefaultSlLookback = 2; // 1 or 2 prior candles
+        /// <summary>Candles immediately before break that must all be trend color (RED for BUY).</summary>
+        public const int TrendLookback = 3;
         /// <summary>Last allowed entry candle start (IST). After this — no trade.</summary>
         public static readonly TimeSpan EntryCutoff = new(14, 45, 0);
 
@@ -42,8 +47,8 @@ namespace FyersLoginWeb.Strategy
                 return trades;
 
             // First candle [0] fully ignored — not used as broken reference either.
-            // breakIdx starts at 2 ⇒ broken index >= 1.
-            int i = 2;
+            // breakIdx starts at TrendLookback ⇒ need N prior trend candles.
+            int i = TrendLookback;
             while (i < dayBars.Count)
             {
                 var buy = TrySignal(dayBars, i, isBuy: true, config);
@@ -71,12 +76,12 @@ namespace FyersLoginWeb.Strategy
         static EmaFailedBreakTrade? TrySignal(
             IReadOnlyList<EmaCandle> bars, int breakIdx, bool isBuy, EmaFailedBreakConfig cfg)
         {
-            // Need: pre[broken-1], broken, break, next — so breakIdx >= 2
-            if (breakIdx < 2 || breakIdx + 1 >= bars.Count)
+            // Need TrendLookback candles before break + entry after
+            if (breakIdx < TrendLookback || breakIdx + 1 >= bars.Count)
                 return null;
 
             var brk = bars[breakIdx];
-            var broken = bars[breakIdx - 1]; // jiska high/low break ho raha hai
+            var broken = bars[breakIdx - 1]; // jiska high/low break ho raha hai (RED on BUY)
             var next = bars[breakIdx + 1];   // confirm candle (required)
 
             if (isBuy)
@@ -85,9 +90,16 @@ namespace FyersLoginWeb.Strategy
                 if (!(brk.High > broken.High)) return null;
                 if (!IsGreen(brk)) return null;
                 if (!IsRed(next)) return null;
+                // Clear downtrend: last N before break all RED (green breaks a red)
+                for (int k = breakIdx - TrendLookback; k < breakIdx; k++)
+                {
+                    if (!IsRed(bars[k])) return null;
+                }
+                // Entry close green ke low se pehle (above green low)
+                if (!(next.Close > brk.Low)) return null;
                 // Continuous high-break ignore: broken candle khud pehle wale ka high
                 // break kar chuka ho to ye 2nd break hai — setup skip
-                if (breakIdx >= 2 && broken.High > bars[breakIdx - 2].High)
+                if (broken.High > bars[breakIdx - 2].High)
                     return null;
             }
             else
@@ -96,8 +108,13 @@ namespace FyersLoginWeb.Strategy
                 if (!(brk.Low < broken.Low)) return null;
                 if (!IsRed(brk)) return null;
                 if (!IsGreen(next)) return null;
+                for (int k = breakIdx - TrendLookback; k < breakIdx; k++)
+                {
+                    if (!IsGreen(bars[k])) return null;
+                }
+                if (!(next.Close < brk.High)) return null;
                 // Continuous low-break ignore (2nd consecutive breakdown)
-                if (breakIdx >= 2 && broken.Low < bars[breakIdx - 2].Low)
+                if (broken.Low < bars[breakIdx - 2].Low)
                     return null;
             }
 
