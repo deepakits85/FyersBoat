@@ -175,8 +175,9 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
     """Bank 15m 5-Jun style only:
     BUY: High break + green break + next red → entry next close
     SELL: Low break + red break + next green → entry next close
+    First candle never used as broken reference (break_idx >= 2).
     """
-    if break_idx < 1 or break_idx + 1 >= len(bars):
+    if break_idx < 2 or break_idx + 1 >= len(bars):
         return None
     brk = bars[break_idx]
     broken = bars[break_idx - 1]

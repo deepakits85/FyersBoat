@@ -40,7 +40,9 @@ namespace FyersLoginWeb.Strategy
             if (dayBars == null || dayBars.Count < 3)
                 return trades;
 
-            int i = 1; // skip first candle for signal start
+            // First candle [0] fully ignored — not used as broken reference either.
+            // breakIdx starts at 2 ⇒ broken index >= 1.
+            int i = 2;
             while (i < dayBars.Count)
             {
                 var buy = TrySignal(dayBars, i, isBuy: true, config);
@@ -68,7 +70,8 @@ namespace FyersLoginWeb.Strategy
         static EmaFailedBreakTrade? TrySignal(
             IReadOnlyList<EmaCandle> bars, int breakIdx, bool isBuy, EmaFailedBreakConfig cfg)
         {
-            if (breakIdx < 1 || breakIdx + 1 >= bars.Count)
+            // Need: pre[broken-1], broken, break, next — so breakIdx >= 2
+            if (breakIdx < 2 || breakIdx + 1 >= bars.Count)
                 return null;
 
             var brk = bars[breakIdx];
