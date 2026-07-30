@@ -8,7 +8,8 @@ namespace FyersLoginWeb.Strategy
     ///
     /// BUY (below EMA9+EMA15, optional near day-low) — Bank 15m 5-Jun style only:
     ///   prior High broken by a GREEN candle → next candle must be RED → entry on that close.
-    ///   Break + entry candles both must be clear of EMA. No entry after 14:45.
+    ///   Break + entry clear of EMA. No entry after 14:45.
+    ///   Ignore if broken candle itself already broke prior high/low (2nd consecutive break).
     /// SELL (above both EMAs, optional near day-high):
     ///   prior Low broken by a RED candle → next candle must be GREEN → entry on that close.
     ///
@@ -80,6 +81,10 @@ namespace FyersLoginWeb.Strategy
                 if (!(brk.High > broken.High)) return null;
                 if (!IsGreen(brk)) return null;
                 if (!IsRed(next)) return null;
+                // Continuous high-break ignore: broken candle khud pehle wale ka high
+                // break kar chuka ho to ye 2nd break hai — setup skip
+                if (breakIdx >= 2 && broken.High > bars[breakIdx - 2].High)
+                    return null;
             }
             else
             {
@@ -87,6 +92,9 @@ namespace FyersLoginWeb.Strategy
                 if (!(brk.Low < broken.Low)) return null;
                 if (!IsRed(brk)) return null;
                 if (!IsGreen(next)) return null;
+                // Continuous low-break ignore (2nd consecutive breakdown)
+                if (breakIdx >= 2 && broken.Low < bars[breakIdx - 2].Low)
+                    return null;
             }
 
             int entryIdx = breakIdx + 1;

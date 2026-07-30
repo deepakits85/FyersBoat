@@ -9,6 +9,7 @@ Rules (Bank 15m 5-Jun BUY style only):
   - SELL: clear above both EMAs (break + entry), optional near day-high;
          prior Low broken by RED candle → next candle GREEN → entry on that close
   - No entry after 14:45 IST
+  - Ignore 2nd consecutive high/low break (broken candle itself already broke prior)
   - SL: min/max of prior 1–2 candles; if risk > 50% of candle just before broken → cap to 50%
   - Target 1:3
 """
@@ -188,12 +189,17 @@ def try_signal(bars, break_idx, is_buy, use_day_prox, prox_pct, sl_lookback, rr)
             return None
         if not is_red(nxt):
             return None
+        # Continuous high-break ignore: broken already broke prior high → 2nd break
+        if break_idx >= 2 and broken["h"] > bars[break_idx - 2]["h"]:
+            return None
     else:
         if not (brk["l"] < broken["l"]):
             return None
         if not is_red(brk):
             return None
         if not is_green(nxt):
+            return None
+        if break_idx >= 2 and broken["l"] < bars[break_idx - 2]["l"]:
             return None
 
     entry_idx = break_idx + 1
@@ -331,7 +337,7 @@ def main():
     print(f"Cache dir: {CACHE}")
     print("Rule: EMA failed-break | first candle ignore | EMA9+15 clear")
     print("BUY: High-break GREEN then next RED | SELL: Low-break RED then next GREEN")
-    print("EMA clear on break+entry candles | No entry after 14:45")
+    print("EMA clear on break+entry | No entry after 14:45 | Skip 2nd consecutive break")
     print(f"Day proximity: {'ON '+str(prox_pct*100)+'%' if use_day_prox else 'OFF'}")
     print(f"SL lookback={sl_lookback} (+50% cap) | Target 1:{rr}")
     print(f"TFs: {', '.join(tfs)} | Analyze {analyze_from_s}→{analyze_to_s}\n")
