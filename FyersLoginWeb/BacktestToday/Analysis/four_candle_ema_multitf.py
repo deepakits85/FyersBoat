@@ -2,13 +2,15 @@
 """
 First-4-candle + EMA9/15 signal checker (VOLUME OFF).
 c3 Open/High/Low/Close must all be clear of EMA9 and EMA15 (no wick/body touch).
-SL = break candle (c1) opposite extreme; Target = 1:1.6.
-Caches Fyers history locally; runs 3/5/10/15/20/30 min TFs.
+SL = break candle (c1) opposite extreme; Target via --rr= (default 1.6).
+
+Examples:
+  python3 four_candle_ema_multitf.py --rr=2 --tfs=10,15,20,30 --from=2026-05-01 --to=2026-07-30
+  python3 four_candle_ema_multitf.py --force
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 import time
 import urllib.parse
@@ -24,20 +26,21 @@ TOKEN = ROOT / "FyersLoginWeb" / "bin" / "Debug" / "net9.0" / "token.json"
 APPSETTINGS = ROOT / "FyersLoginWeb" / "appsettings.json"
 
 IST = timedelta(hours=5, minutes=30)
-TFS = ["3", "5", "10", "15", "20", "30"]
+DEFAULT_TFS = ["3", "5", "10", "15", "20", "30"]
 SYMS = [
     ("Nifty", "NSE:NIFTY50-INDEX"),
     ("Bank", "NSE:NIFTYBANK-INDEX"),
     ("Sensex", "BSE:SENSEX-INDEX"),
 ]
-RR = 1.6  # overridden by --rr=N
+DEFAULT_RR = 1.6
 
 
-def parse_rr(argv) -> float:
+def arg_val(argv, key, default=None):
+    prefix = f"--{key}="
     for a in argv:
-        if a.startswith("--rr="):
-            return float(a.split("=", 1)[1])
-    return RR
+        if a.startswith(prefix):
+            return a.split("=", 1)[1]
+    return default
 
 
 def load_auth():
@@ -51,11 +54,7 @@ def cache_path(sym: str, res: str, d0: str, d1: str) -> Path:
     return CACHE / f"{safe}_{res}_{d0}_{d1}.json"
 
 
-def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, force=False):
-    path = cache_path(sym, res, d0, d1)
-    if path.exists() and not force:
-        return json.loads(path.read_text())
-
+def _fetch_once(cid: str, access: str, sym: str, res: str, d0: str, d1: str):
     url = (
         "https://api-t1.fyers.in/data/history"
         f"?symbol={urllib.parse.quote(sym)}&resolution={res}&date_format=1"
@@ -65,11 +64,10 @@ def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, for
         url,
         headers={"Authorization": f"{cid}:{access}", "User-Agent": "FyersBoat-MultiTF/1.0"},
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=90) as r:
         body = json.loads(r.read())
     if body.get("s") != "ok":
-        raise RuntimeError(f"{sym} {res}: {body}")
-
+        raise RuntimeError(f"{sym} {res} {d0}->{d1}: {body}")
     by = {}
     for row in body.get("candles") or []:
         ts = datetime.fromtimestamp(row[0], timezone.utc).replace(tzinfo=None) + IST
@@ -82,10 +80,39 @@ def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, for
             "c": float(row[4]),
             "v": vol,
         }
+    return by
+
+
+def month_chunks(d0: str, d1: str):
+    """Split inclusive date range into ~1-month chunks (Fyers history limits)."""
+    start = datetime.strptime(d0, "%Y-%m-%d").date()
+    end = datetime.strptime(d1, "%Y-%m-%d").date()
+    cur = start
+    while cur <= end:
+        # next month start - 1 day, or end
+        if cur.month == 12:
+            nxt = cur.replace(year=cur.year + 1, month=1, day=1)
+        else:
+            nxt = cur.replace(month=cur.month + 1, day=1)
+        chunk_end = min(end, nxt - timedelta(days=1))
+        yield cur.isoformat(), chunk_end.isoformat()
+        cur = chunk_end + timedelta(days=1)
+
+
+def fetch_range(cid: str, access: str, sym: str, res: str, d0: str, d1: str, force=False):
+    path = cache_path(sym, res, d0, d1)
+    if path.exists() and not force:
+        return json.loads(path.read_text())
+
+    by = {}
+    for c0, c1 in month_chunks(d0, d1):
+        part = _fetch_once(cid, access, sym, res, c0, c1)
+        by.update(part)
+        print(f"  fetched {sym} {res}m {c0}→{c1} (+{len(part)})", flush=True)
+        time.sleep(0.4)
     rows = [by[k] for k in sorted(by)]
     path.write_text(json.dumps(rows))
     print(f"  cached {path.name} ({len(rows)} bars)", flush=True)
-    time.sleep(0.35)
     return rows
 
 
@@ -106,7 +133,6 @@ def clear_below(c, ema_v):
 
 
 def build_trade(side: str, c1, c3, rr: float):
-    """BUY: Entry=c1.High SL=c1.Low | SELL: Entry=c1.Low SL=c1.High | Target 1:rr."""
     buy = side == "BUY"
     entry = c1["h"] if buy else c1["l"]
     sl = c1["l"] if buy else c1["h"]
@@ -122,7 +148,7 @@ def build_trade(side: str, c1, c3, rr: float):
         "break_h": c1["h"],
         "break_l": c1["l"],
         "c1_t": c1["t"],
-        "c2_t": None,  # filled by caller
+        "c2_t": None,
         "c3_t": c3["t"],
         "c1_o": c1["o"],
         "c1_h": c1["h"],
@@ -133,7 +159,6 @@ def build_trade(side: str, c1, c3, rr: float):
 
 
 def apply_signal(c0, c1, c2, c3, rr: float):
-    """Volume removed. Returns trade dict or None."""
     c2_red = c2["c"] < c2["o"]
     c2_green = c2["c"] > c2["o"]
     c3_red = c3["c"] < c3["o"]
@@ -175,7 +200,6 @@ def first_session_bars(rows, day: datetime.date, need=4):
 
 
 def session_bars_after(rows, day: datetime.date, after_iso: str):
-    """Same-day bars strictly after signal candle start."""
     out = []
     for r in rows:
         t = datetime.fromisoformat(r["t"])
@@ -189,9 +213,6 @@ def session_bars_after(rows, day: datetime.date, after_iso: str):
 
 
 def resolve_outcome(trade, bars_after):
-    """Walk forward after signal. Same-bar SL+TP -> adverse (SL) first.
-    Returns (outcome, exit_time_iso|None, exit_price|None).
-    """
     buy = trade["side"] == "BUY"
     sl, tgt = trade["sl"], trade["target"]
     for b in bars_after:
@@ -223,27 +244,49 @@ def hhmm(iso):
     return datetime.fromisoformat(iso).strftime("%H:%M")
 
 
+def trading_days(rows, analyze_from: datetime.date, analyze_to: datetime.date):
+    days = sorted({
+        datetime.fromisoformat(r["t"]).date()
+        for r in rows
+        if analyze_from <= datetime.fromisoformat(r["t"]).date() <= analyze_to
+        and (datetime.fromisoformat(r["t"]).hour, datetime.fromisoformat(r["t"]).minute) >= (9, 15)
+    })
+    return days
+
+
 def main():
     force = "--force" in sys.argv
-    rr = parse_rr(sys.argv)
-    d0, d1 = "2026-07-20", "2026-07-30"
-    days = [datetime(2026, 7, d).date() for d in (27, 28, 29, 30)]
+    quiet = "--quiet" in sys.argv  # skip NONE day spam
+    rr = float(arg_val(sys.argv, "rr", DEFAULT_RR))
+    tfs = [x.strip() for x in arg_val(sys.argv, "tfs", ",".join(DEFAULT_TFS)).split(",") if x.strip()]
+    # fetch window (EMA warmup): default 20 Apr → 30 Jul; analyze: 1 May → 30 Jul
+    fetch_from = arg_val(sys.argv, "fetch-from", arg_val(sys.argv, "from", "2026-04-20"))
+    analyze_from_s = arg_val(sys.argv, "analyze-from", arg_val(sys.argv, "from", "2026-05-01"))
+    analyze_to_s = arg_val(sys.argv, "to", "2026-07-30")
+    # if user only passed --from/--to, fetch from --from too
+    if arg_val(sys.argv, "from") and not arg_val(sys.argv, "fetch-from"):
+        fetch_from = analyze_from_s
+    analyze_from = datetime.strptime(analyze_from_s, "%Y-%m-%d").date()
+    analyze_to = datetime.strptime(analyze_to_s, "%Y-%m-%d").date()
+
     cid, access = load_auth()
 
     print(f"Cache dir: {CACHE}")
     print("Rule: first-4 (ignore c0) + EMA9/15 | VOL OFF | c3 OHLC clear EMA")
     print(f"SL = break candle (c1) opposite extreme | Target 1:{rr}")
-    print(f"TFs: {', '.join(TFS)} min | Range lookback {d0}→{d1}\n")
+    print(f"TFs: {', '.join(tfs)} min")
+    print(f"Fetch {fetch_from}→{analyze_to_s} | Analyze {analyze_from_s}→{analyze_to_s}\n")
 
     summary = []  # (name, tf, day, side, outcome)
     trades_log = []
+    by_tf = defaultdict(lambda: {"BUY": 0, "SELL": 0, "TARGET": 0, "SL": 0, "OPEN": 0, "NONE": 0, "days": 0})
 
     for name, sym in SYMS:
         print(f"===== {name} =====")
-        for res in TFS:
-            rows = fetch_range(cid, access, sym, res, d0, d1, force=force)
+        for res in tfs:
+            rows = fetch_range(cid, access, sym, res, fetch_from, analyze_to_s, force=force)
             if len(rows) < 20:
-                print(f"  {res}m: insufficient data")
+                print(f"  {res}m: insufficient data ({len(rows)})")
                 continue
             closes = [r["c"] for r in rows]
             e9 = ema(closes, 9)
@@ -252,18 +295,23 @@ def main():
                 r["ema9"] = e9[i]
                 r["ema15"] = e15[i]
 
-            print(f"  --- {res}m ---")
+            days = trading_days(rows, analyze_from, analyze_to)
+            print(f"  --- {res}m --- days={len(days)} bars={len(rows)}")
             for day in days:
+                by_tf[res]["days"] += 1
                 bars = first_session_bars(rows, day, 4)
                 if len(bars) < 4:
-                    print(f"    {day} NO DATA (bars={len(bars)})")
                     summary.append((name, res, str(day), "NODATA", "-"))
+                    if not quiet:
+                        print(f"    {day} NO DATA (bars={len(bars)})")
                     continue
                 c0, c1, c2, c3 = bars[0], bars[1], bars[2], bars[3]
                 trade = apply_signal(c0, c1, c2, c3, rr)
                 if not trade:
                     summary.append((name, res, str(day), "NONE", "-"))
-                    print(f"    {day} → NONE @c3={hhmm(c3['t'])}")
+                    by_tf[res]["NONE"] += 1
+                    if not quiet:
+                        print(f"    {day} → NONE @c3={hhmm(c3['t'])}")
                     continue
 
                 after = session_bars_after(rows, day, c3["t"])
@@ -276,6 +324,8 @@ def main():
                 trade["c3_ema9"], trade["c3_ema15"] = c3["ema9"], c3["ema15"]
                 summary.append((name, res, str(day), trade["side"], outcome))
                 trades_log.append((name, res, str(day), trade))
+                by_tf[res][trade["side"]] += 1
+                by_tf[res][outcome] += 1
                 print(
                     f"    {day} → {trade['side']:4} @c3={hhmm(c3['t'])} "
                     f"Entry={trade['entry']:.2f} SL={trade['sl']:.2f} "
@@ -283,30 +333,42 @@ def main():
                     f"→ {outcome}" + (f" @{hhmm(exit_t)}" if exit_t and outcome != "OPEN" else "")
                 )
 
-    print("\n========== SIGNAL MATRIX (week) ==========")
-    print(f"{'Index':8} {'TF':5} {'27':10} {'28':10} {'29':10} {'30':10}")
-    grid = defaultdict(dict)
-    for name, res, day, side, outcome in summary:
-        cell = side if side in ("NONE", "NODATA") else f"{side[0]}:{outcome[:3]}"
-        grid[(name, res)][day[-2:]] = cell
-    for name, _ in SYMS:
-        for res in TFS:
-            row = grid.get((name, res), {})
-            print(
-                f"{name:8} {res+'m':5} "
-                f"{row.get('27','-'):10} {row.get('28','-'):10} "
-                f"{row.get('29','-'):10} {row.get('30','-'):10}"
-            )
-
     buys = sum(1 for *_, s, _o in summary if s == "BUY")
     sells = sum(1 for *_, s, _o in summary if s == "SELL")
     tgt = sum(1 for *_, o in summary if o == "TARGET")
     sl = sum(1 for *_, o in summary if o == "SL")
     opn = sum(1 for *_, o in summary if o == "OPEN")
     net_r = tgt * rr + sl * (-1.0)
-    print(f"\nTotals: BUY={buys}  SELL={sells}")
-    print(f"Outcomes (same-day after signal): TARGET={tgt}  SL={sl}  OPEN={opn}")
-    print(f"Net R (OPEN=0): {net_r:+.1f}R  |  RR=1:{rr}")
+    n_sig = buys + sells
+    win = (100.0 * tgt / n_sig) if n_sig else 0.0
+
+    print("\n========== BY TIMEFRAME ==========")
+    print(f"{'TF':5} {'Sig':5} {'BUY':5} {'SELL':5} {'TGT':5} {'SL':5} {'OPEN':5} {'NetR':8} {'Win%':6}")
+    for res in tfs:
+        b = by_tf[res]
+        sig = b["BUY"] + b["SELL"]
+        nr = b["TARGET"] * rr + b["SL"] * (-1.0)
+        wr = (100.0 * b["TARGET"] / sig) if sig else 0.0
+        print(
+            f"{res+'m':5} {sig:5} {b['BUY']:5} {b['SELL']:5} {b['TARGET']:5} {b['SL']:5} {b['OPEN']:5} "
+            f"{nr:+8.1f} {wr:5.1f}%"
+        )
+
+    print("\n========== BY INDEX ==========")
+    print(f"{'Index':8} {'Sig':5} {'BUY':5} {'SELL':5} {'TGT':5} {'SL':5} {'OPEN':5} {'NetR':8}")
+    for name, _ in SYMS:
+        rows_s = [x for x in summary if x[0] == name]
+        b = sum(1 for *_, s, _o in rows_s if s == "BUY")
+        se = sum(1 for *_, s, _o in rows_s if s == "SELL")
+        tg = sum(1 for *_, o in rows_s if o == "TARGET")
+        sln = sum(1 for *_, o in rows_s if o == "SL")
+        op = sum(1 for *_, o in rows_s if o == "OPEN")
+        print(f"{name:8} {b+se:5} {b:5} {se:5} {tg:5} {sln:5} {op:5} {tg*rr+sln*(-1):+8.1f}")
+
+    print(f"\n========== TOTALS RR=1:{rr} | {analyze_from_s}→{analyze_to_s} ==========")
+    print(f"Signals: BUY={buys}  SELL={sells}  total={n_sig}")
+    print(f"Outcomes: TARGET={tgt}  SL={sl}  OPEN={opn}  Win%={win:.1f}%")
+    print(f"Net R (OPEN=0): {net_r:+.1f}R")
 
     print("\n========== DETAILED TRADES (verify) ==========")
     print(
@@ -325,7 +387,6 @@ def main():
             f"{trade['outcome']:6} {hhmm(trade['exit_t']):5} {r_mult:5.1f}"
         )
 
-    # Extra candle OHLC dump for chart verify
     print("\n========== CANDLE OHLC (c1 break / c2 / c3 signal) ==========")
     for i, (name, res, day, trade) in enumerate(trades_log, 1):
         print(

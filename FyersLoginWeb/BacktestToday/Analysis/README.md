@@ -13,10 +13,15 @@ Caches Fyers history under
 `FyersLoginWeb/bin/Release/net9.0/datacache/multitf/`.
 
 ```bash
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py                # RR=1.6 default
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py --rr=2
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py --rr=3
-python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force        # re-fetch
+# 3 months, TFs 10/15/20/30, RR 1:2
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py \
+  --rr=2 --tfs=10,15,20,30 --from=2026-05-01 --to=2026-07-30 --quiet
+
+# EMA warmup from Apr 20 (default when using --analyze-from / fetch-from)
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py \
+  --rr=3 --tfs=10,15,20,30 --fetch-from=2026-04-20 --analyze-from=2026-05-01 --to=2026-07-30 --quiet
+
+python3 BacktestToday/Analysis/four_candle_ema_multitf.py --force  # re-fetch
 ```
 
 TFs: 3, 5, 10, 15, 20, 30 min — Nifty / Bank / Sensex.
